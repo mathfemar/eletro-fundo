@@ -1,0 +1,236 @@
+/* Custom styles for Eletro Fundo */
+
+/* Keyframe animations */
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.05);
+        opacity: 0.8;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Hero card hover effects */
+.hero-card {
+    animation: fadeIn 0.6s ease-out;
+}
+
+.hero-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.6) !important;
+    border-color: #ffc107 !important;
+}
+
+/* Navbar link hover effects */
+.nav-link-custom {
+    position: relative;
+    overflow: hidden;
+}
+
+.nav-link-custom::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 0;
+    height: 2px;
+    background: #ffc107;
+    transition: all 0.3s ease;
+    transform: translateX(-50%);
+}
+
+.nav-link-custom:hover::before {
+    width: 80%;
+}
+
+.nav-link-custom:hover {
+    color: #ffc107 !important;
+    transform: translateY(-2px);
+}
+
+.nav-link-custom.active {
+    background: rgba(255, 193, 7, 0.15) !important;
+    color: #ffc107 !important;
+    font-weight: 600;
+}
+
+/* Smooth page transitions */
+#page-content {
+    animation: fadeIn 0.4s ease-out;
+}
+
+/* Card hover effects */
+.card {
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #ffc107;
+}
+
+/* Responsive typography and layout */
+@media (max-width: 768px) {
+    /* Typography adjustments */
+    h1 {
+        font-size: 24px !important;
+    }
+    
+    h2 {
+        font-size: 20px !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    h4 {
+        font-size: 18px !important;
+    }
+    
+    /* Hero card mobile optimization */
+    .hero-card {
+        margin-bottom: 16px;
+    }
+    
+    .hero-card .card-body {
+        padding: 16px !important;
+    }
+    
+    .hero-card h2 {
+        font-size: 24px !important;
+    }
+    
+    /* Compact navbar for mobile */
+    .navbar {
+        padding: 8px 0 !important;
+        min-height: auto !important;
+    }
+    
+    .navbar .container-fluid {
+        padding: 0 12px !important;
+    }
+    
+    #navbar-logo {
+        font-size: 24px !important;
+        margin-right: 8px !important;
+    }
+    
+    .nav-link-custom {
+        font-size: 13px !important;
+        padding: 6px 8px !important;
+    }
+    
+    /* Container padding for mobile */
+    .container-fluid {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+    
+    /* Reduce icon sizes on mobile */
+    .hero-card .card-body > div > div:first-child {
+        width: 60px !important;
+        height: 60px !important;
+        margin-right: 12px !important;
+    }
+    
+    .hero-card .card-body > div > div:first-child span {
+        font-size: 32px !important;
+    }
+    
+    /* Card spacing */
+    .row {
+        margin-left: -8px !important;
+        margin-right: -8px !important;
+    }
+    
+    .row > * {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+}
+
+/* Extra small devices (phones in portrait) */
+@media (max-width: 576px) {
+    /* Even smaller text for very small screens */
+    h1 {
+        font-size: 20px !important;
+    }
+    
+    h2 {
+        font-size: 18px !important;
+    }
+    
+    /* Ultra-compact navbar */
+    .navbar {
+        padding: 6px 0 !important;
+    }
+    
+    #navbar-logo {
+        font-size: 20px !important;
+        margin-right: 6px !important;
+    }
+    
+    /* Very compact nav links */
+    .nav-link-custom {
+        font-size: 12px !important;
+        padding: 4px 6px !important;
+    }
+    
+    /* Reduce card padding more */
+    .card-body {
+        padding: 12px !important;
+    }
+    
+    /* Hero card adjustments */
+    .hero-card h2 {
+        font-size: 20px !important;
+    }
+    
+    .hero-card p {
+        font-size: 11px !important;
+    }
+}
+
+/* Glow effect on focus */
+input:focus, select:focus, textarea:focus {
+    border-color: #ffc107 !important;
+    box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25) !important;
+}
+
+/* Smooth transitions for all interactive elements */
+a, button, .btn {
+    transition: all 0.3s ease;
+}
+
+/* Loading animation placeholder */
+.loading-placeholder {
+    animation: pulse 1.5s infinite;
+}

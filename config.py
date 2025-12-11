@@ -1,6 +1,3 @@
-"""
-Configurações da aplicação Eletro Fundo
-"""
 import os
 from dotenv import load_dotenv
 
@@ -25,8 +22,9 @@ else:
 
 # Dash
 DASH_HOST = os.getenv("DASH_HOST", "0.0.0.0")
-DASH_PORT = int(os.getenv("DASH_PORT", 8527))
+DASH_PORT = int(os.getenv("DASH_PORT", 8526))
 DASH_DEBUG = os.getenv("DASH_DEBUG", "True").lower() == "true"
+DASH_DEV_TOOLS_HOT_RELOAD = os.getenv("DASH_DEV_TOOLS_HOT_RELOAD", "False").lower() == "true"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -40,3 +38,4 @@ YF_CHUNK_SIZE = 10  # Download tickers em chunks para evitar erros
 print(f"[CONFIG] Ambiente: {ENVIRONMENT}")
 print(f"[CONFIG] Database: {DB_HOST}:{DB_PORT}/{DB_NAME}")
 print(f"[CONFIG] Dash: {DASH_HOST}:{DASH_PORT}")
+print(f"[CONFIG] Hot reload: {'enabled' if DASH_DEV_TOOLS_HOT_RELOAD else 'disabled'}")

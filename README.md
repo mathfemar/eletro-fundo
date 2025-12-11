@@ -34,6 +34,8 @@ cp .env.example .env
 # Editar .env com suas credenciais
 ```
 
+ > Quando estiver desenvolvendo sem acesso ao banco e houver erros de `FileNotFoundError` ligados ao hot reload no Windows, defina `DASH_DEV_TOOLS_HOT_RELOAD=False` no `.env` para impedir que o watcher escaneie `site-packages`.
+
 5. **Criar tabelas no banco**
 ```bash
 python init_db.py
@@ -50,7 +52,7 @@ Acesse: http://0.0.0.0:8527
 
 ```
 eletro-fundo/
-├── app.py                    # Main Dash application
+├── app.py                    # Entrypoint que inicializa o frontend
 ├── config.py                 # Configurações
 ├── requirements.txt          # Dependências Python
 ├── PLANNING.md               # Planejamento detalhado
@@ -58,8 +60,11 @@ eletro-fundo/
 │   ├── connection.py         # Conexão PostgreSQL
 │   └── models.py             # Modelos ORM
 ├── utils/                    # Utilitários
-├── components/               # Componentes Dash
-├── callbacks/                # Callbacks interativos
+├── frontend/                  # Layout, callbacks e widgets do Dash
+│   ├── app.py
+│   ├── layout.py
+│   ├── callbacks.py
+│   └── components/
 ├── jobs/                     # Tarefas agendadas
 └── logs/                     # Logs de aplicação
 ```
