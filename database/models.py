@@ -71,34 +71,87 @@ class PrecoHistorico(Base):
     __tablename__ = "precos_historicos"
     __table_args__ = (
         UniqueConstraint("idativo", "data", name="uq_preco_ativo_data"),
-        Index("idx_precos_ativo_data", "idativo", "data"),
+        Index("idx_precos_historicos_ativo_data", "idativo", "data"),
+        Index("idx_precos_historicos_data", "data"),
         {"schema": "mercado"},
     )
 
     id = Column(Integer, primary_key=True)
-    idativo = Column(Integer, ForeignKey("mercado.ativos.idativo", ondelete="CASCADE"), nullable=False)
     data = Column(Date, nullable=False)
-    preco_moeda_local = Column(Numeric(10, 4))
-    preco_real = Column(Numeric(10, 4))
-    volume = Column(Integer)
+    idativo = Column(Integer, ForeignKey("mercado.ativos.idativo", ondelete="CASCADE"), nullable=False)
+    preco_abertura = Column(Numeric(10, 4))
+    preco_maximo = Column(Numeric(10, 4))
+    preco_minimo = Column(Numeric(10, 4))
+    preco_fechamento = Column(Numeric(10, 4))
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relacionamentos
     ativo = relationship("Ativo", back_populates="precos")
 
     def __repr__(self):
-        return f"<PrecoHistorico {self.data}: R$ {self.preco_real}>"
+        return f"<PrecoHistorico {self.data}: {self.ativo.codigo}>"
+
+
+class PrecoAdjClose(Base):
+    """Preço ajustado de fechamento (Adj Close) - Schema: mercado"""
+    __tablename__ = "precos_adj_close"
+    __table_args__ = (
+        UniqueConstraint("idativo", "data", name="uq_preco_adj_close_ativo_data"),
+        Index("idx_precos_adj_close_ativo_data", "idativo", "data"),
+        Index("idx_precos_adj_close_data", "data"),
+        {"schema": "mercado"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    data = Column(Date, nullable=False)
+    idativo = Column(Integer, ForeignKey("mercado.ativos.idativo", ondelete="CASCADE"), nullable=False)
+    preco_fechamento_ajustado = Column(Numeric(10, 4))
+    volume = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relacionamentos
+    ativo = relationship("Ativo", foreign_keys=[idativo])
+
+    def __repr__(self):
+        return f"<PrecoAdjClose {self.data}: R$ {self.preco_fechamento_ajustado}>"
+
+
+class VariacaoDiaria(Base):
+    """Variação percentual diária - Schema: mercado"""
+    __tablename__ = "variacao_diaria"
+    __table_args__ = (
+        UniqueConstraint("idativo", "data", name="uq_variacao_ativo_data"),
+        Index("idx_variacao_ativo_data", "idativo", "data"),
+        Index("idx_variacao_data", "data"),
+        {"schema": "mercado"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    data = Column(Date, nullable=False)
+    idativo = Column(Integer, ForeignKey("mercado.ativos.idativo", ondelete="CASCADE"), nullable=False)
+    variacao_pct = Column(Numeric(10, 4))
+    variacao_absoluta = Column(Numeric(10, 4))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relacionamentos
+    ativo = relationship("Ativo", foreign_keys=[idativo])
+
+    def __repr__(self):
+        return f"<VariacaoDiaria {self.data}: {self.variacao_pct}%>"
 
 
 class TaxaCambio(Base):
     """Taxa de câmbio USD/BRL - Schema: mercado"""
     __tablename__ = "taxa_cambio"
-    __table_args__ = {"schema": "mercado"}
+    __table_args__ = (
+        Index("idx_taxa_cambio_data", "data"),
+        {"schema": "mercado"},
+    )
 
     id = Column(Integer, primary_key=True)
-    data = Column(Date, unique=True)
+    data = Column(Date, unique=True, nullable=False)
     usd_brl = Column(Numeric(10, 4))
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):
         return f"<TaxaCambio {self.data}: {self.usd_brl}>"

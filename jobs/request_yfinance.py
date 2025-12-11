@@ -3,10 +3,16 @@ import pandas as pd
 import logging
 from typing import Optional
 from datetime import datetime as dt, timedelta
+import sys
+import os
+_CA = os.path.abspath(os.curdir)
+sys.path.insert(0, _CA)
+from database.connection import engine
+from jobs.utils import get_data_last_cota, today_YYYY_MM_DD
 
-today_YYYY_MM_DD = dt.today().strftime('%Y-%m-%d')
+logger = logging.getLogger(__name__)
 
-def get_yf_data_notebook(lista_ativos_yf, data_target: Optional[str] = None, max_retries: int = 4, chunk_size: Optional[int] = None):
+def get_yf_data(lista_ativos_yf, data_target: Optional[str] = None, max_retries: int = 4, chunk_size: Optional[int] = None):
     """
     Download 252 calendar-day history (inclusive of data_target) of Adjusted Close and Volume
     for tickers in `lista_ativos_yf`.
@@ -16,14 +22,11 @@ def get_yf_data_notebook(lista_ativos_yf, data_target: Optional[str] = None, max
     - If 'Adj Close' missing, falls back to 'Close'.
     - chunk_size: if provided (e.g. 10), downloads tickers in chunks to avoid failures on large lists.
     """
-    data_target = None
-    if data_target is None:
-        data_target = get_data_last_cota(today_YYYY_MM_DD)
 
     end_inclusive = pd.to_datetime(data_target)
-    start = str((end_inclusive - pd.Timedelta(days=365*5)).strftime('%Y-%m-%d'))
+    start = str((end_inclusive - timedelta(days=365*5)).strftime('%Y-%m-%d'))
     # yfinance end is exclusive, so add one day
-    end = (end_inclusive + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+    end = (end_inclusive + timedelta(days=1)).strftime('%Y-%m-%d')
     print(f"Downloading YF data for {len(lista_ativos_yf)} tickers from {start} to {end} (exclusive)")
 
     # disable SSL verification globally for requests (insecure)
@@ -181,4 +184,3 @@ def get_yf_data_notebook(lista_ativos_yf, data_target: Optional[str] = None, max
     result = result.sort_values(['Ticker', 'Date']).reset_index(drop=True)
     return result
 	
-df_yf = get_yf_data_notebook(lista_ativos_yf)
