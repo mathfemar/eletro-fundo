@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Banco de dados
+# *.db
+# *.db-shm
+# *.db-wal
+
+# Cache
+cache/
+*.pkl
+
+# Ambiente
+.env
+
+# VS Code
+.vscode/
+
+# Distribuição / build
+dist/
+build/
+*.egg-info/
