@@ -1,0 +1,19 @@
+# API
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+
+# Data
+pandas
+numpy
+openpyxl
+requests
+
+# YFinance + proxy corporativo
+yfinance
+curl_cffi
+
+# SQLite já vem embutido no Python — sem dependência extra

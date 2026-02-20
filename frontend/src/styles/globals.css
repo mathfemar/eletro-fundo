@@ -1,0 +1,133 @@
+/* ─── Reset & Base ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    /* Cores principais */
+    --color-primary: #EAB308;
+    /* Amarelo escuro */
+    --color-primary-light: #FDE047;
+    /* Amarelo claro */
+    --color-secondary: #EAB308;
+    /* Mantido igual para compatibilidade */
+    --color-success: #10b981;
+    --color-danger: #ef4444;
+    --color-warning: #f59e0b;
+    --color-accent: #EAB308;
+    /* Nova cor de destaque pura */
+
+    /* Backgrounds */
+    --color-bg-dark: #080808;
+    /* Um pouco mais suave que #000 */
+    --color-bg-card: #111111;
+    --color-bg-card-hover: #1a1a1a;
+    --color-bg-sidebar: #0a0a0a;
+    --color-bg-upbar: #0a0a0a;
+
+    /* Texto */
+    --color-text: #ffffff;
+    --color-text-muted: rgba(255, 255, 255, 0.55);
+    --color-text-dim: rgba(255, 255, 255, 0.35);
+
+    /* Bordas */
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-hover: rgba(255, 255, 255, 0.18);
+
+    /* Layout */
+    --sidebar-width: 280px;
+    --upbar-height: 64px;
+
+    /* Gradiente de destaque removido, substituído por cor sólida e brilho leve se necessário */
+    --gradient-brand: none;
+
+    /* Tipografia */
+    --font-family: 'Inter', system-ui, sans-serif;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+
+    /* Efeitos */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5);
+    --transition: all 0.2s ease;
+}
+
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-family);
+    background: var(--color-bg-dark);
+    color: var(--color-text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* ─── Utilitários globais ───────────────────────────────────────────────────── */
+.text-accent {
+    color: var(--color-accent);
+}
+
+.card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-card);
+    transition: var(--transition);
+}
+
+.card:hover {
+    border-color: var(--color-border-hover);
+    background: var(--color-bg-card-hover);
+}
+
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem;
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+}
