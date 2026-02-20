@@ -26,11 +26,11 @@ import pandas as pd
 
 # ─── Configuração ────────────────────────────────────────────────────────────
 
-# Resolve o caminho do banco em relação à raiz do projeto (dois níveis acima de src/)
+# Resolve o caminho do banco em relação à raiz do projeto (três níveis acima de app/services/)
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))          # services/
-_ROOT_DIR = os.path.abspath(os.path.join(_SRC_DIR, "..", "..", "..", ".."))  # raiz
+_ROOT_DIR = os.path.abspath(os.path.join(_SRC_DIR, "..", "..", ".."))  # raiz
 
-DB_PATH = os.getenv("DATABASE_PATH", os.path.join(_ROOT_DIR, "Fundinho"))
+DB_PATH = os.getenv("DATABASE_PATH", os.path.join(_ROOT_DIR, "database", "main_db"))
 
 _logger = logging.getLogger("app.db")
 
