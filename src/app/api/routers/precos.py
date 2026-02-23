@@ -13,6 +13,7 @@ Histórico:
 """
 
 import logging
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -127,10 +128,28 @@ async def get_historico_ativo(
     dt_inicio: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
     dt_fim:    Optional[str] = Query(default=None, description="YYYY-MM-DD"),
 ):
-    """Retorna série histórica de preços de um ativo."""
+    """
+    Retorna série histórica de preços de um ativo.
+    Se dt_inicio estiver além do que existe no banco, busca automaticamente
+    no Yahoo Finance antes de retornar.
+    """
     try:
         from app.services.precos.historico_service import HistoricoService
-        dados = HistoricoService().get_historico(
+        svc = HistoricoService()
+
+        # Se pediu range específico, garante que os dados existam no banco
+        if dt_inicio:
+            import asyncio
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: svc.ensure_range(
+                    cd_ativo.upper(),
+                    dt_inicio,
+                    dt_fim or date.today().isoformat(),
+                ),
+            )
+
+        dados = svc.get_historico(
             cd_ativo=cd_ativo.upper(),
             dt_inicio=dt_inicio,
             dt_fim=dt_fim,

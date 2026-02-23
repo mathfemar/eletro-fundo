@@ -1,0 +1,21 @@
+.ativos-home {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 70vh;
+}
+
+.ativos-hero {
+    text-align: center;
+}
+
+.ativos-title {
+    font-size: 3.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+}
+
+.ativos-subtitle {
+    font-size: 1.125rem;
+    color: var(--color-text-muted);
+}

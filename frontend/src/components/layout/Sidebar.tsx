@@ -43,12 +43,18 @@ function NavItemComponent({ item, depth = 0 }: { item: NavItem; depth?: number }
 
 export default function Sidebar() {
     const location = useLocation();
-    const currentSection = sections.find(s => location.pathname.startsWith(s.basePath)) ?? sections[0];
+    // Evita que basePath '/' faça match em tudo com startsWith
+    const currentSection =
+        sections.find(s =>
+            s.basePath === '/'
+                ? location.pathname === '/'
+                : location.pathname.startsWith(s.basePath)
+        ) ?? sections[0];
 
     return (
         <aside className="sidebar">
             <div className="sidebar-header">
-                <span className="sidebar-logo text-accent">Fundinho</span>
+                <NavLink to="/" className="sidebar-logo text-accent">Fundinho</NavLink>
             </div>
             <nav className="sidebar-nav">
                 {currentSection.navItems.map(item => (

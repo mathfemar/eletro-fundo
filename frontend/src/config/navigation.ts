@@ -25,4 +25,26 @@ export const sections: Section[] = [
             },
         ],
     },
+    {
+        id: 'ativos',
+        label: 'Ativos',
+        basePath: '/ativos',
+        navItems: [
+            {
+                label: 'Consulta/Cadastro',
+                href: '/ativos/lista',
+                icon: 'fas fa-folder-open',
+            },
+            {
+                label: 'Preços ao Vivo',
+                href: '/ativos/precos-ao-vivo',
+                icon: 'fas fa-bolt',
+            },
+            {
+                label: 'Histórico de Preços',
+                href: '/ativos/historico',
+                icon: 'fas fa-chart-line',
+            },
+        ],
+    },
 ];

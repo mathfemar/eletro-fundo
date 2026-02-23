@@ -46,7 +46,7 @@ _UPSERT_SQL = """
 
 
 def _get_ativos_mapeados() -> list[dict]:
-    """Retorna todos os ativos com ticker YF disponível."""
+    """Retorna todos os ativos com PRECO_ONLINE=1 e ticker YF disponível."""
     df = query("""
         SELECT
             da.ID_ATIVO,
@@ -56,6 +56,7 @@ def _get_ativos_mapeados() -> list[dict]:
         JOIN DIM_ATIVO_MAPPING dam ON dam.Id_Ativo = da.ID_ATIVO
         WHERE dam.CD_YF IS NOT NULL
           AND TRIM(dam.CD_YF) != ''
+          AND da.PRECO_ONLINE = 1
     """)
     return df.to_dict("records")
 

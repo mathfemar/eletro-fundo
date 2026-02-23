@@ -18,7 +18,7 @@ from typing import Optional
 
 import pandas as pd
 
-from app.services.db_connection import query, query_scalar, execute_many
+from app.services.db_connection import query, query_one, query_scalar, execute_many
 
 logger = logging.getLogger("app.services.precos.historico")
 
@@ -46,7 +46,7 @@ def _ultima_data_carregada(id_ativo: int) -> Optional[str]:
 
 def _get_ativos_mapeados(ids_ativo: Optional[list[int]] = None) -> list[dict]:
     """
-    Retorna todos os ativos com CD_YF mapeado.
+    Retorna todos os ativos com PRECO_ONLINE=1 e CD_YF mapeado.
     Se ids_ativo for fornecido, filtra apenas esses IDs.
     """
     sql = """
@@ -58,6 +58,7 @@ def _get_ativos_mapeados(ids_ativo: Optional[list[int]] = None) -> list[dict]:
         JOIN DIM_ATIVO_MAPPING dam ON dam.Id_Ativo = da.ID_ATIVO
         WHERE dam.CD_YF IS NOT NULL
           AND TRIM(dam.CD_YF) != ''
+          AND da.PRECO_ONLINE = 1
     """
     df = query(sql)
     if ids_ativo:
@@ -227,6 +228,77 @@ class HistoricoService:
             "total": len(ativos),
             "linhas_inseridas": total_linhas,
         }
+
+    # ── Auto-fetch on demand ──────────────────────────────────────────────────
+
+    def ensure_range(self, cd_ativo: str, dt_inicio: str, dt_fim: str) -> None:
+        """
+        Garante que o ativo tenha dados históricos cobrindo [dt_inicio, dt_fim].
+        Se a menor data no banco for posterior a dt_inicio, baixa o que falta.
+        """
+        from app.services.YFinanceConfig import configure_yfinance_for_corporate_proxy
+        configure_yfinance_for_corporate_proxy()
+
+        # Descobre ID_ATIVO + CD_YF
+        row = query_one(
+            """
+            SELECT da.ID_ATIVO, dam.CD_YF
+            FROM DIM_ATIVO da
+            JOIN DIM_ATIVO_MAPPING dam ON dam.Id_Ativo = da.ID_ATIVO
+            WHERE da.CD_ATIVO = ? AND dam.CD_YF IS NOT NULL
+            """,
+            params=(cd_ativo,),
+        )
+        if not row:
+            logger.warning("[ensure_range] %s — sem mapeamento CD_YF", cd_ativo)
+            return
+
+        id_ativo = row["ID_ATIVO"]
+        cd_yf    = row["CD_YF"]
+
+        # Verifica menor data que já temos
+        menor = query_scalar(
+            "SELECT MIN(DT_REFERENCIA) FROM FAT_ATIVO_PRECO WHERE ID_ATIVO = ?",
+            params=(id_ativo,),
+        )
+
+        if menor and menor <= dt_inicio:
+            # Já temos dados suficientes para o início do range
+            return
+
+        # Precisa baixar dados de dt_inicio até (menor - 1 dia) ou dt_fim
+        fetch_end = menor if menor else dt_fim
+        logger.info("[ensure_range] %s — baixando %s → %s", cd_yf, dt_inicio, fetch_end)
+
+        try:
+            df = _download_historico(cd_yf, dt_inicio, fetch_end)
+            if df.empty:
+                logger.warning("[ensure_range] %s — sem dados no período", cd_yf)
+                return
+
+            rows: list[tuple] = []
+            for dt_idx, r in df.iterrows():
+                dt_ref = dt_idx.strftime("%Y-%m-%d")
+                rows.append((
+                    id_ativo, dt_ref,
+                    _safe(r.get("Open")), _safe(r.get("High")),
+                    _safe(r.get("Low")),  _safe(r.get("Close")),
+                    _safe(r.get("AdjClose")), _safe(r.get("Volume")),
+                ))
+            if rows:
+                inseridos = execute_many(
+                    """
+                    INSERT OR IGNORE INTO FAT_ATIVO_PRECO (
+                        ID_ATIVO, DT_REFERENCIA,
+                        VL_ABERTURA, VL_MAXIMA, VL_MINIMA,
+                        VL_FECHAMENTO, VL_FECHAMENTO_AJ, VL_VOLUME
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+                logger.info("[ensure_range] %s — %d registros inseridos", cd_yf, inseridos)
+        except Exception as exc:
+            logger.error("[ensure_range] %s: %s", cd_yf, exc)
 
     def get_historico(
         self,

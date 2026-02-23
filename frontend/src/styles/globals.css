@@ -131,3 +131,206 @@ body {
     color: var(--color-danger);
     font-size: var(--font-size-sm);
 }
+
+/* Variação de preços */
+.positivo { color: var(--color-success); }
+.negativo { color: var(--color-danger); }
+.neutro   { color: var(--color-text-muted); }
+
+/* ─── Page Layout Compartilhado (pg-*) ─────────────────────────────────────── */
+.pg-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Header */
+.pg-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+}
+
+.pg-header-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.pg-header-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: var(--color-accent);
+    flex-shrink: 0;
+}
+
+.pg-header-text h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text);
+    margin: 0 0 0.15rem;
+    line-height: 1.2;
+}
+
+.pg-header-text p {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.pg-header-meta {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-dim);
+    text-align: right;
+    line-height: 1.6;
+}
+
+.pg-header-meta strong {
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+/* Barra de controles */
+.pg-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    padding: 0.875rem 1.25rem;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.pg-select-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.pg-select-label {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.pg-select-wrap {
+    position: relative;
+}
+
+.pg-select-wrap::after {
+    content: '';
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%) translateY(-1px);
+    pointer-events: none;
+    border-style: solid;
+    border-width: 5px 4px 0;
+    border-color: rgba(255, 255, 255, 0.4) transparent transparent;
+}
+
+.pg-select {
+    -webkit-appearance: none;
+    appearance: none;
+    background: #1a1a1a;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family);
+    padding: 0.45rem 2.25rem 0.45rem 0.75rem;
+    cursor: pointer;
+    outline: none;
+    min-width: 180px;
+    transition: border-color 0.15s;
+}
+
+.pg-select:focus {
+    border-color: rgba(234, 179, 8, 0.5);
+}
+
+/* Estados */
+.pg-loading,
+.pg-error,
+.pg-empty {
+    padding: 3rem;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+}
+
+.pg-error { color: var(--color-danger); }
+
+.pg-hint {
+    padding: 3rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    border-radius: var(--radius-md);
+    border: 1px dashed var(--color-border);
+}
+
+.pg-hint i {
+    font-size: 2rem;
+    color: var(--color-text-dim);
+}
+
+.pg-hint span {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-dim);
+}
+
+/* Card */
+.pg-card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.pg-card-header {
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.pg-card-title {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-accent);
+    letter-spacing: 0.04em;
+}
+
+.pg-card-meta {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.pg-card-body {
+    padding: 1.25rem;
+}
