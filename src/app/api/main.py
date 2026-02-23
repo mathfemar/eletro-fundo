@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.config import get_settings
-from app.api.routers import health
+from app.api.routers import health, precos
 
 logger = logging.getLogger("app.api")
 _start_time = time.time()
@@ -14,7 +14,9 @@ _start_time = time.time()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Fundinho API starting...")
-    # Inicializar caches de background aqui conforme services forem criados
+    # Garante que as tabelas de preços existem antes dos primeiros requests
+    from app.services.precos.db_setup import create_tables
+    create_tables()
     yield
     logger.info("🛑 Fundinho API shutting down...")
 
@@ -39,6 +41,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(health.router)
+app.include_router(precos.router)
 
 
 if __name__ == "__main__":

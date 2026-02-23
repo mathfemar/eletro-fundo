@@ -1,9 +1,13 @@
 from functools import lru_cache
 
 
-# Singletons dos services — adicionar aqui conforme os services forem criados
-# Exemplo:
-# @lru_cache()
-# def get_cotacoes_service():
-#     from app.services.cotacoes.service import CotacoesService
-#     return CotacoesService()
+@lru_cache()
+def get_pricing_live_service():
+    from app.services.precos.pricing_live_service import PricingLiveService
+    return PricingLiveService()
+
+
+@lru_cache()
+def get_historico_service():
+    from app.services.precos.historico_service import HistoricoService
+    return HistoricoService()
