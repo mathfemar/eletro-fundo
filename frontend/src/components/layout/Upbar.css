@@ -51,3 +51,37 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
+
+.upbar-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text-muted);
+    transition: var(--transition);
+    white-space: nowrap;
+}
+
+.upbar-refresh-btn:not(:disabled):hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    color: var(--color-text);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.upbar-refresh-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.upbar-refresh-btn--done {
+    border-color: rgba(16, 185, 129, 0.4) !important;
+    color: var(--color-success) !important;
+    background: rgba(16, 185, 129, 0.08) !important;
+}

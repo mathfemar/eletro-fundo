@@ -22,10 +22,29 @@ interface LiveResponse {
     total: number;
 }
 
+interface LiveSerieResponse {
+    items: PrecoLive[];
+    total: number;
+}
+
 // ─── API functions ────────────────────────────────────────────────────────────
 
 export async function getPrecosLive(): Promise<PrecoLive[]> {
     const res = await apiClient.get<APIResponse<LiveResponse>>('/api/precos/live');
+    return res.data.data.items;
+}
+
+export async function atualizarPrecosLive(): Promise<void> {
+    await apiClient.post('/api/precos/live/atualizar');
+}
+
+export async function getPrecosLiveSerieAtivo(
+    cdAtivo: string,
+    horas = 24,
+): Promise<PrecoLive[]> {
+    const res = await apiClient.get<APIResponse<LiveSerieResponse>>(
+        `/api/precos/live/serie/${encodeURIComponent(cdAtivo)}?horas=${horas}`,
+    );
     return res.data.data.items;
 }
 

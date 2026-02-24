@@ -5,6 +5,7 @@ Live:
     POST  /api/precos/live/atualizar            → dispara captura no Yahoo Finance
     GET   /api/precos/live                      → snapshot atual do banco
     GET   /api/precos/live/{cd_ativo}           → preço live de um ativo específico
+    GET   /api/precos/live/serie/{cd_ativo}     → snapshots live das últimas N horas
 
 Histórico:
     POST  /api/precos/historico/carregar        → carga incremental (body: CarregarParams)
@@ -34,8 +35,7 @@ class CarregarParams(BaseModel):
 
 
 class AtualizarLiveParams(BaseModel):
-    max_workers: int   = 5     # threads paralelas
-    delay_s:     float = 0.3   # pausa por thread (rate limit)
+    chunk_size: int = 200   # tickers por chamada yf.download()
 
 
 # ─── Live ─────────────────────────────────────────────────────────────────────
@@ -49,8 +49,7 @@ async def atualizar_live(params: AtualizarLiveParams = AtualizarLiveParams()):
     try:
         from app.services.precos.pricing_live_service import PricingLiveService
         resultado = PricingLiveService().atualizar_todos(
-            max_workers=params.max_workers,
-            delay_s=params.delay_s,
+            chunk_size=params.chunk_size,
         )
         return APIResponse(data=resultado)
     except Exception as exc:
@@ -83,6 +82,21 @@ async def get_live_ativo(cd_ativo: str):
         raise
     except Exception as exc:
         logger.exception("Erro em GET /live/%s", cd_ativo)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/live/serie/{cd_ativo}", response_model=APIResponse)
+async def get_live_serie_ativo(
+    cd_ativo: str,
+    horas: int = Query(default=24, ge=1, le=168, description="Janela em horas (1..168)"),
+):
+    """Retorna snapshots intradiários do ativo nas últimas N horas."""
+    try:
+        from app.services.precos.pricing_live_service import PricingLiveService
+        dados = PricingLiveService().get_live_serie_ativo(cd_ativo.upper(), horas=horas)
+        return APIResponse(data={"items": dados, "total": len(dados)})
+    except Exception as exc:
+        logger.exception("Erro em GET /live/serie/%s", cd_ativo)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -140,12 +154,14 @@ async def get_historico_ativo(
         # Se pediu range específico, garante que os dados existam no banco
         if dt_inicio:
             import asyncio
+            from datetime import timedelta
+            dt_fim_ensure = dt_fim or (date.today() + timedelta(days=1)).isoformat()
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: svc.ensure_range(
                     cd_ativo.upper(),
                     dt_inicio,
-                    dt_fim or date.today().isoformat(),
+                    dt_fim_ensure,
                 ),
             )
 

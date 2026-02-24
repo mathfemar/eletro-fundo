@@ -130,7 +130,10 @@ function AtivoForm({
         });
     };
 
-    const tipoOpts = (meta?.tipos ?? []).map(t => ({ value: t.ID_TIPO_ATIVO, label: `${t.TIPO_ATIVO}${t.ClasseRisco ? ` — ${t.ClasseRisco}` : ''}` }));
+    const tipoOpts = (meta?.tipos ?? []).map(t => ({
+        value: t.ID_TIPO_ATIVO,
+        label: `${t.TIPO_ATIVO}${t.FL_CLASSE_RISCO ? ` — Risco: ${t.FL_CLASSE_RISCO}` : ''}`,
+    }));
     const setorPaiOpts = (meta?.setores_pai ?? []).map(s => ({ value: s.ID_SETOR_PAI, label: s.SetorPai }));
     const setorFilhoOpts = (meta?.setores_filho ?? []).map(s => ({ value: s.ID_SETOR_FILHO, label: s.SetorFilho }));
 
@@ -306,7 +309,7 @@ function TabelaAtivos({ ativos, onSelect }: { ativos: Ativo[]; onSelect: (a: Ati
                         <tr key={a.CD_ATIVO} className="lista-table-row-clickable" onClick={() => onSelect(a)}>
                             <td className="col-ativo">{a.CD_ATIVO}</td>
                             <td>{a.TIPO_ATIVO ?? '—'}</td>
-                            <td>{a.ClasseRisco ?? '—'}</td>
+                            <td>{a.FL_CLASSE_RISCO ?? '—'}</td>
                             <td>{a.SetorPai ?? '—'}</td>
                             <td>{a.SetorFilho ?? '—'}</td>
                             <td>{a.MOEDA ?? '—'}</td>

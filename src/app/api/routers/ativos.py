@@ -11,7 +11,7 @@ PUT  /api/ativos/{cd_ativo}  → atualizar ativo + mapping existentes
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.models.common import APIResponse
@@ -43,7 +43,7 @@ _SQL_ATIVOS = """
         dam.CD_ISIN,
         dam.CD_YF,
         dta.TIPO_ATIVO,
-        dta.ClasseRisco,
+        dta.FL_CLASSE_RISCO,
         dsf.SetorFilho,
         dsp.SetorPai
     FROM DIM_ATIVO da
@@ -80,10 +80,13 @@ class AtivoInput(BaseModel):
 # ─── Endpoints ────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=APIResponse)
-async def listar_ativos():
-    """Retorna todos os ativos com metadados completos."""
+async def listar_ativos(
+    preco_online: Optional[int] = Query(default=None, description="1 = apenas ativos com preco online"),
+):
+    """Retorna ativos com metadados completos. Use ?preco_online=1 para filtrar."""
     try:
-        df = query(f"{_SQL_ATIVOS} ORDER BY da.CD_ATIVO")
+        where = "WHERE da.PRECO_ONLINE = 1" if preco_online == 1 else ""
+        df = query(f"{_SQL_ATIVOS} {where} ORDER BY da.CD_ATIVO")
         dados = df.to_dict("records")
         return APIResponse(data={"items": dados, "total": len(dados)})
     except Exception as exc:
@@ -96,7 +99,19 @@ async def get_meta():
     """Retorna tabelas de dimensão para popular os selects do formulário."""
     try:
         tipos = query(
-            "SELECT ID_TIPO_ATIVO, TIPO_ATIVO, ClasseRisco FROM DIM_TIPO_ATIVO ORDER BY TIPO_ATIVO"
+            """
+            SELECT
+                ID_TIPO_ATIVO,
+                TIPO_ATIVO,
+                ORIGEM,
+                FL_FUTURO,
+                FL_OPCAO,
+                FL_TAXA,
+                FL_CALCULO_RETORNO,
+                FL_CLASSE_RISCO
+            FROM DIM_TIPO_ATIVO
+            ORDER BY TIPO_ATIVO
+            """
         ).to_dict("records")
         setores_pai = query(
             "SELECT ID_SETOR_PAI, SetorPai FROM DIM_SETOR_PAI ORDER BY SetorPai"

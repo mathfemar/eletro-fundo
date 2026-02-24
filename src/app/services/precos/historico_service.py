@@ -22,6 +22,8 @@ from app.services.db_connection import query, query_one, query_scalar, execute_m
 
 logger = logging.getLogger("app.services.precos.historico")
 
+DOWNLOAD_CHUNK = 100  # tickers por chamada yf.download()
+
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -39,7 +41,18 @@ def _safe(val) -> float | None:
 def _ultima_data_carregada(id_ativo: int) -> Optional[str]:
     """Retorna a última DT_REFERENCIA carregada para o ativo, ou None se não há dados."""
     return query_scalar(
-        "SELECT MAX(DT_REFERENCIA) FROM FAT_ATIVO_PRECO WHERE ID_ATIVO = ?",
+                """
+                SELECT MAX(DT_REFERENCIA)
+                FROM FAT_ATIVO_PRECO
+                WHERE ID_ATIVO = ?
+                    AND (
+                        VL_ABERTURA IS NOT NULL OR
+                        VL_MAXIMA IS NOT NULL OR
+                        VL_MINIMA IS NOT NULL OR
+                        VL_FECHAMENTO IS NOT NULL OR
+                        VL_FECHAMENTO_AJ IS NOT NULL
+                    )
+                """,
         params=(id_ativo,),
     )
 
@@ -66,42 +79,91 @@ def _get_ativos_mapeados(ids_ativo: Optional[list[int]] = None) -> list[dict]:
     return df.to_dict("records")
 
 
-def _download_historico(cd_yf: str, dt_inicio: str, dt_fim: str) -> pd.DataFrame:
-    """
-    Baixa OHLCV histórico de um ticker via yfinance.
+def _normalize_sub(sub: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza colunas e remove timezone do índice."""
+    sub = sub.copy()
+    sub.columns = [str(c).replace(" ", "") for c in sub.columns]
+    if "AdjClose" not in sub.columns and "Close" in sub.columns:
+        sub["AdjClose"] = sub["Close"]
+    if sub.index.tz is not None:
+        sub.index = sub.index.tz_convert(None)
+    sub.index = sub.index.normalize()
+    return sub.dropna(how="all")
 
-    Retorna DataFrame com colunas normalizadas:
-        Open, High, Low, Close, AdjClose, Volume
-    O índice é a data do pregão (tz removida).
+
+def _extract_ticker_frame(df: pd.DataFrame, cd_yf: str) -> pd.DataFrame | None:
+    """Extrai frame de um ticker aceitando MultiIndex [ticker, campo] ou [campo, ticker]."""
+    if not isinstance(df.columns, pd.MultiIndex):
+        return _normalize_sub(df)
+
+    lvl0 = df.columns.get_level_values(0)
+    lvl1 = df.columns.get_level_values(1)
+
+    if cd_yf in lvl0:
+        return _normalize_sub(df[cd_yf])
+
+    if cd_yf in lvl1:
+        swapped = df.swaplevel(0, 1, axis=1)
+        return _normalize_sub(swapped[cd_yf])
+
+    return None
+
+
+def _download_historico_batch(cd_yf_list: list[str], dt_inicio: str, dt_fim: str) -> dict[str, pd.DataFrame]:
+    """
+    Baixa OHLCV histórico para múltiplos tickers em uma única chamada yf.download().
+    Retorna dict {cd_yf: DataFrame} com colunas normalizadas.
     """
     import yfinance as yf
 
-    ticker = yf.Ticker(cd_yf)
+    if not cd_yf_list:
+        return {}
 
-    # auto_adjust=False → retorna Close raw + Adj Close separados
-    df = ticker.history(
-        start=dt_inicio,
-        end=dt_fim,
-        auto_adjust=False,
-        actions=False,   # ignora Dividends e Stock Splits (não precisamos aqui)
-    )
+    try:
+        df = yf.download(
+            tickers=cd_yf_list,
+            start=dt_inicio,
+            end=dt_fim,
+            auto_adjust=False,
+            actions=False,
+            group_by="ticker",
+            progress=False,
+            threads=False,
+        )
+    except Exception as exc:
+        logger.error("[BATCH HIST] Erro no download de %d tickers: %s", len(cd_yf_list), exc)
+        return {}
 
-    if df.empty:
-        return df
+    if df is None or df.empty:
+        return {}
 
-    # Remove timezone do índice para compatibilidade com DATE do SQLite
-    df.index = df.index.tz_localize(None).normalize()
+    result: dict[str, pd.DataFrame] = {}
+    single = len(cd_yf_list) == 1
 
-    # Normaliza nomes de colunas para lidar com variações de versão do yfinance
-    df.columns = [c.replace(" ", "") for c in df.columns]
+    if single:
+        cd_yf = cd_yf_list[0]
+        sub = _extract_ticker_frame(df, cd_yf)
+        if sub is None:
+            sub = _normalize_sub(df)
+        if not sub.empty:
+            result[cd_yf] = sub
+    else:
+        for cd_yf in cd_yf_list:
+            try:
+                sub = _extract_ticker_frame(df, cd_yf)
+                if sub is None:
+                    continue
+                if not sub.empty:
+                    result[cd_yf] = sub
+            except Exception as exc:
+                logger.warning("[BATCH HIST] Erro ao extrair %s: %s", cd_yf, exc)
 
-    # Garante coluna AdjClose (pode vir como 'AdjClose' ou 'Adj Close' → já normalizado)
-    if "AdjClose" not in df.columns and "Close" in df.columns:
-        logger.warning("%s — coluna AdjClose ausente; usando Close como fallback", cd_yf)
-        df["AdjClose"] = df["Close"]
+    return result
 
-    return df
-
+def _download_historico(cd_yf: str, dt_inicio: str, dt_fim: str) -> pd.DataFrame:
+    """Baixa OHLCV histórico de um único ticker (usado por ensure_range)."""
+    result = _download_historico_batch([cd_yf], dt_inicio, dt_fim)
+    return result.get(cd_yf, pd.DataFrame())
 
 # ─── Service ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +171,7 @@ class HistoricoService:
     """
     Gerencia a tabela FAT_ATIVO_PRECO.
 
-    carregar_historico() — download incremental + batch INSERT OR IGNORE
+    carregar_historico() — download em batch + batch INSERT OR IGNORE
     get_historico()      — leitura da série histórica de um ativo
     resumo()             — contagem de registros por ativo
     """
@@ -122,6 +184,7 @@ class HistoricoService:
     ) -> dict:
         """
         Carrega série histórica OHLCV para os ativos mapeados.
+        Usa yf.download() em batches de até DOWNLOAD_CHUNK tickers por chamada.
 
         Args:
             dt_inicio: data de início no formato 'YYYY-MM-DD'.
@@ -133,59 +196,77 @@ class HistoricoService:
         Returns:
             Resumo: {"ok", "sem_dados", "erro", "total", "linhas_inseridas"}
         """
+        import time
         from app.services.YFinanceConfig import configure_yfinance_for_corporate_proxy
         configure_yfinance_for_corporate_proxy()
 
-        dt_fim_final = dt_fim or date.today().isoformat()
+        dt_fim_final = dt_fim or (date.today() + timedelta(days=1)).isoformat()
         ativos = _get_ativos_mapeados(ids_ativo)
 
         if not ativos:
             return {"ok": 0, "sem_dados": 0, "erro": 0, "total": 0, "linhas_inseridas": 0,
                     "msg": "Nenhum ativo com CD_YF mapeado"}
 
-        ok = 0
+        # 1️⃣ Calcula dt_inicio efetivo por ativo e filtra os já atualizados
+        pendentes: list[dict] = []
         sem_dados = 0
-        erros = 0
-        total_linhas = 0
 
         for ativo in ativos:
-            id_ativo = ativo["ID_ATIVO"]
-            cd_yf    = ativo["CD_YF"]
-
-            # ── Determina data de início incremental ─────────────────────────
             if dt_inicio:
                 dt_inicio_final = dt_inicio
             else:
-                ultima = _ultima_data_carregada(id_ativo)
+                ultima = _ultima_data_carregada(ativo["ID_ATIVO"])
                 if ultima:
-                    # D+1 da última data carregada
-                    dt_inicio_final = (
-                        date.fromisoformat(ultima) + timedelta(days=1)
-                    ).isoformat()
+                    dt_inicio_final = (date.fromisoformat(ultima) + timedelta(days=1)).isoformat()
                 else:
                     dt_inicio_final = "2020-01-01"
 
-            # Nenhuma data para buscar
             if dt_inicio_final > dt_fim_final:
-                logger.info("[UP-TO-DATE] %s — já atualizado até %s", cd_yf, dt_fim_final)
+                logger.debug("[UP-TO-DATE] %s — já atualizado até %s", ativo["CD_YF"], dt_fim_final)
                 sem_dados += 1
                 continue
 
-            try:
-                df = _download_historico(cd_yf, dt_inicio_final, dt_fim_final)
+            pendentes.append({**ativo, "_dt_inicio": dt_inicio_final})
 
-                if df.empty:
-                    logger.warning("[SEM DADOS] %s no período %s → %s", cd_yf, dt_inicio_final, dt_fim_final)
+        ok = 0
+        erros = 0
+        total_linhas = 0
+
+        # 2️⃣ Download em batches — agrupa por dt_inicio mínimo do chunk
+        for i in range(0, len(pendentes), DOWNLOAD_CHUNK):
+            chunk = pendentes[i : i + DOWNLOAD_CHUNK]
+            cd_yf_list = [a["CD_YF"] for a in chunk]
+            dt_chunk_inicio = min(a["_dt_inicio"] for a in chunk)
+
+            logger.info(
+                "[BATCH HIST] chunk %d–%d | %d tickers | %s → %s",
+                i + 1, i + len(chunk), len(chunk), dt_chunk_inicio, dt_fim_final,
+            )
+
+            batch_result = _download_historico_batch(cd_yf_list, dt_chunk_inicio, dt_fim_final)
+
+            for ativo in chunk:
+                cd_yf = ativo["CD_YF"]
+                id_ativo = ativo["ID_ATIVO"]
+                dt_ativo_inicio = ativo["_dt_inicio"]
+
+                df_ativo = batch_result.get(cd_yf)
+                if df_ativo is None or df_ativo.empty:
+                    logger.warning("[SEM DADOS] %s no período %s → %s", cd_yf, dt_chunk_inicio, dt_fim_final)
+                    erros += 1
+                    continue
+
+                # Filtra apenas datas a partir do dt_inicio específico deste ativo
+                df_ativo = df_ativo[df_ativo.index >= pd.Timestamp(dt_ativo_inicio)]
+                if df_ativo.empty:
                     sem_dados += 1
                     continue
 
-                # ── Monta lista de tuplas para INSERT OR IGNORE ──────────────
                 rows: list[tuple] = []
-                for dt_idx, row in df.iterrows():
+                for dt_idx, row in df_ativo.iterrows():
                     dt_ref = dt_idx.strftime("%Y-%m-%d")
                     rows.append((
-                        id_ativo,
-                        dt_ref,
+                        id_ativo, dt_ref,
                         _safe(row.get("Open")),
                         _safe(row.get("High")),
                         _safe(row.get("Low")),
@@ -197,25 +278,30 @@ class HistoricoService:
                 if rows:
                     inseridos = execute_many(
                         """
-                        INSERT OR IGNORE INTO FAT_ATIVO_PRECO (
+                        INSERT INTO FAT_ATIVO_PRECO (
                             ID_ATIVO, DT_REFERENCIA,
                             VL_ABERTURA, VL_MAXIMA, VL_MINIMA,
-                            VL_FECHAMENTO, VL_FECHAMENTO_AJ, VL_VOLUME
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            VL_FECHAMENTO, VL_FECHAMENTO_AJ, VL_VOLUME,
+                            DT_CARGA
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '-3 hours'))
+                        ON CONFLICT(ID_ATIVO, DT_REFERENCIA) DO UPDATE SET
+                            VL_ABERTURA = excluded.VL_ABERTURA,
+                            VL_MAXIMA = excluded.VL_MAXIMA,
+                            VL_MINIMA = excluded.VL_MINIMA,
+                            VL_FECHAMENTO = excluded.VL_FECHAMENTO,
+                            VL_FECHAMENTO_AJ = excluded.VL_FECHAMENTO_AJ,
+                            VL_VOLUME = excluded.VL_VOLUME,
+                            DT_CARGA = datetime('now', '-3 hours')
                         """,
                         rows,
                     )
                     total_linhas += inseridos
-                    logger.info(
-                        "[OK] %s — %d registros inseridos (%s → %s)",
-                        cd_yf, inseridos, dt_inicio_final, dt_fim_final,
-                    )
-
+                    logger.info("[OK] %s — %d registros inseridos", cd_yf, inseridos)
                 ok += 1
 
-            except Exception as exc:
-                logger.error("[ERRO] %s: %s", cd_yf, exc)
-                erros += 1
+            # Pausa entre chunks
+            if i + DOWNLOAD_CHUNK < len(pendentes):
+                time.sleep(1.5)
 
         logger.info(
             "Carga histórica concluída: %d OK | %d sem dados | %d erros | %d linhas",
@@ -258,7 +344,18 @@ class HistoricoService:
 
         # Verifica menor data que já temos
         menor = query_scalar(
-            "SELECT MIN(DT_REFERENCIA) FROM FAT_ATIVO_PRECO WHERE ID_ATIVO = ?",
+                        """
+                        SELECT MIN(DT_REFERENCIA)
+                        FROM FAT_ATIVO_PRECO
+                        WHERE ID_ATIVO = ?
+                            AND (
+                                VL_ABERTURA IS NOT NULL OR
+                                VL_MAXIMA IS NOT NULL OR
+                                VL_MINIMA IS NOT NULL OR
+                                VL_FECHAMENTO IS NOT NULL OR
+                                VL_FECHAMENTO_AJ IS NOT NULL
+                            )
+                        """,
             params=(id_ativo,),
         )
 
@@ -288,11 +385,20 @@ class HistoricoService:
             if rows:
                 inseridos = execute_many(
                     """
-                    INSERT OR IGNORE INTO FAT_ATIVO_PRECO (
+                    INSERT INTO FAT_ATIVO_PRECO (
                         ID_ATIVO, DT_REFERENCIA,
                         VL_ABERTURA, VL_MAXIMA, VL_MINIMA,
-                        VL_FECHAMENTO, VL_FECHAMENTO_AJ, VL_VOLUME
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        VL_FECHAMENTO, VL_FECHAMENTO_AJ, VL_VOLUME,
+                        DT_CARGA
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '-3 hours'))
+                    ON CONFLICT(ID_ATIVO, DT_REFERENCIA) DO UPDATE SET
+                        VL_ABERTURA = excluded.VL_ABERTURA,
+                        VL_MAXIMA = excluded.VL_MAXIMA,
+                        VL_MINIMA = excluded.VL_MINIMA,
+                        VL_FECHAMENTO = excluded.VL_FECHAMENTO,
+                        VL_FECHAMENTO_AJ = excluded.VL_FECHAMENTO_AJ,
+                        VL_VOLUME = excluded.VL_VOLUME,
+                        DT_CARGA = datetime('now', '-3 hours')
                     """,
                     rows,
                 )

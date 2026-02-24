@@ -1,5 +1,5 @@
 """
-db_setup.py — Cria as tabelas FAT_PRICING_LIVE e FAT_ATIVO_PRECO caso não existam.
+db_setup.py — Cria as tabelas de preços caso não existam.
 
 Chamado no lifespan da API para garantir que o schema existe antes de qualquer request.
 """
@@ -27,7 +27,7 @@ def create_tables() -> None:
             VL_VAR_DIA_PCT          REAL,
             VL_PRECO_FECHAMENTO_ANT REAL,
             DT_REFERENCIA           DATE,
-            DT_HORA_CAPTURA         DATETIME NOT NULL DEFAULT (datetime('now')),
+            DT_HORA_CAPTURA         DATETIME NOT NULL DEFAULT (datetime('now', '-3 hours')),
             CD_FONTE                TEXT     DEFAULT 'yfinance',
             FOREIGN KEY (ID_ATIVO) REFERENCES DIM_ATIVO(ID_ATIVO)
         )
@@ -36,6 +36,37 @@ def create_tables() -> None:
     execute("""
         CREATE INDEX IF NOT EXISTS idx_live_dt_captura
             ON FAT_PRICING_LIVE(DT_REFERENCIA)
+    """)
+
+    # ── FAT_PRICING_LIVE_HIST ───────────────────────────────────────────────
+    # Histórico intradiário dos snapshots live (append-only).
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_PRICING_LIVE_HIST (
+            ID_LIVE_HIST            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID_ATIVO                INTEGER NOT NULL,
+            VL_PRECO_ATUAL          REAL    NOT NULL,
+            VL_PRECO_ABERTURA       REAL,
+            VL_PRECO_MAX            REAL,
+            VL_PRECO_MIN            REAL,
+            VL_VOLUME_DIA           REAL,
+            VL_VAR_DIA              REAL,
+            VL_VAR_DIA_PCT          REAL,
+            VL_PRECO_FECHAMENTO_ANT REAL,
+            DT_REFERENCIA           DATE,
+            DT_HORA_CAPTURA         DATETIME NOT NULL,
+            CD_FONTE                TEXT     DEFAULT 'yfinance',
+            FOREIGN KEY (ID_ATIVO) REFERENCES DIM_ATIVO(ID_ATIVO)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_live_hist_ativo_captura
+            ON FAT_PRICING_LIVE_HIST(ID_ATIVO, DT_HORA_CAPTURA)
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_live_hist_captura
+            ON FAT_PRICING_LIVE_HIST(DT_HORA_CAPTURA)
     """)
 
     # ── FAT_ATIVO_PRECO ───────────────────────────────────────────────────────
@@ -54,7 +85,7 @@ def create_tables() -> None:
             VL_VOLUME        REAL,
             CD_MOEDA         TEXT    DEFAULT 'BRL',
             CD_FONTE         TEXT    DEFAULT 'yfinance',
-            DT_CARGA         DATETIME DEFAULT (datetime('now')),
+            DT_CARGA         DATETIME DEFAULT (datetime('now', '-3 hours')),
             FOREIGN KEY (ID_ATIVO) REFERENCES DIM_ATIVO(ID_ATIVO)
         )
     """)
@@ -69,4 +100,4 @@ def create_tables() -> None:
             ON FAT_ATIVO_PRECO(DT_REFERENCIA)
     """)
 
-    logger.info("✓ Tabelas FAT_PRICING_LIVE e FAT_ATIVO_PRECO verificadas/criadas.")
+    logger.info("✓ Tabelas FAT_PRICING_LIVE, FAT_PRICING_LIVE_HIST e FAT_ATIVO_PRECO verificadas/criadas.")

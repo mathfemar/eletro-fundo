@@ -1,5 +1,7 @@
 import { apiClient, type APIResponse } from './client';
 
+interface AtivosResponse { items: Ativo[]; total: number; }
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface Ativo {
@@ -22,7 +24,7 @@ export interface Ativo {
     CD_ISIN: string | null;
     CD_YF: string | null;
     TIPO_ATIVO: string | null;
-    ClasseRisco: string | null;
+    FL_CLASSE_RISCO: string | null;
     SetorFilho: string | null;
     SetorPai: string | null;
 }
@@ -50,7 +52,12 @@ export interface AtivoInput {
 export interface TipoAtivo {
     ID_TIPO_ATIVO: number;
     TIPO_ATIVO: string;
-    ClasseRisco: string | null;
+    ORIGEM: string | null;
+    FL_FUTURO: number | null;
+    FL_OPCAO: number | null;
+    FL_TAXA: number | null;
+    FL_CALCULO_RETORNO: number | null;
+    FL_CLASSE_RISCO: string | null;
 }
 
 export interface SetorPaiItem {
@@ -69,13 +76,13 @@ export interface AtivosMeta {
     setores_filho: SetorFilhoItem[];
 }
 
-interface AtivosResponse {
-    items: Ativo[];
-    total: number;
-}
-
 export async function getAtivos(): Promise<Ativo[]> {
     const res = await apiClient.get<APIResponse<AtivosResponse>>('/api/ativos');
+    return res.data.data.items;
+}
+
+export async function getAtivosOnline(): Promise<Ativo[]> {
+    const res = await apiClient.get<APIResponse<AtivosResponse>>('/api/ativos?preco_online=1');
     return res.data.data.items;
 }
 

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import { useResumoHistorico, useHistoricoAtivo } from '@/hooks/usePrecos';
-import { useAtivos } from '@/hooks/useAtivos';
+import { useAtivosOnline } from '@/hooks/useAtivos';
 import { formatNumero } from '@/utils/formatBR';
 import type { CandleRow } from '@/api/precos';
 import './Historico.css';
@@ -94,7 +94,7 @@ function GraficoFechamento({ rows, cdAtivo }: { rows: CandleRow[]; cdAtivo: stri
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function Historico() {
-    const { data: ativos, isLoading: loadingAtivos } = useAtivos();
+    const { data: ativos, isLoading: loadingAtivos } = useAtivosOnline();
     const { data: resumo } = useResumoHistorico();
     const [cdAtivo, setCdAtivo] = useState<string | null>(null);
     const [periodo, setPeriodo] = useState<Periodo>('1A');

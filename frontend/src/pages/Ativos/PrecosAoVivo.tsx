@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import Plot from 'react-plotly.js';
-import { usePrecosLive } from '@/hooks/usePrecos';
-import { useAtivos } from '@/hooks/useAtivos';
+import { usePrecosLive, usePrecosLiveSerie } from '@/hooks/usePrecos';
+import { useAtivosOnline } from '@/hooks/useAtivos';
 import { formatNumero, formatPct, variacaoClass } from '@/utils/formatBR';
 import type { PrecoLive } from '@/api/precos';
 import './PrecosAoVivo.css';
@@ -10,7 +10,7 @@ import './PrecosAoVivo.css';
 
 function formatCaptura(dt: string | null): string {
     if (!dt) return '—';
-    const d = new Date(dt.replace(' ', 'T') + 'Z');
+    const d = new Date(dt.replace(' ', 'T'));
     if (isNaN(d.getTime())) return dt;
     return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
@@ -95,33 +95,37 @@ function RangePregao({ row }: { row: PrecoLive }) {
     );
 }
 
-// ─── Candle do dia ───────────────────────────────────────────────────────────
+// ─── Série intradiária (24h) ─────────────────────────────────────────────────
 
-function CandleDia({ row }: { row: PrecoLive }) {
-    const { VL_PRECO_ABERTURA: open, VL_PRECO_MAX: high,
-            VL_PRECO_MIN: low, VL_PRECO_ATUAL: close, DT_REFERENCIA: dt } = row;
+function Serie24h({ points }: { points: PrecoLive[] }) {
+    if (!points || points.length === 0) return null;
 
-    if (open == null || high == null || low == null || close == null) return null;
+    const x = points.map(p => p.DT_HORA_CAPTURA?.replace(' ', 'T') ?? '');
+    const y = points.map(p => p.VL_PRECO_ATUAL ?? null);
+    const last = points[points.length - 1];
+    const first = points[0];
 
-    const cor = close >= open ? '#10b981' : '#ef4444';
+    const p0 = first?.VL_PRECO_ATUAL ?? null;
+    const p1 = last?.VL_PRECO_ATUAL ?? null;
+    const cor = (p0 != null && p1 != null && p1 >= p0) ? '#10b981' : '#ef4444';
+
+    const yVals = y.filter((v): v is number => v != null);
+    const yMin = yVals.length ? Math.min(...yVals) : 0;
+    const yMax = yVals.length ? Math.max(...yVals) : 1;
+    const pad = Math.max((yMax - yMin) * 0.15, 0.01);
 
     return (
         <Plot
             data={[{
-                type: 'candlestick',
-                x: [dt ?? 'Hoje'],
-                open: [open],
-                high: [high],
-                low:  [low],
-                close: [close],
-                increasing: { line: { color: '#10b981', width: 2 }, fillcolor: 'rgba(16,185,129,0.25)' },
-                decreasing: { line: { color: '#ef4444', width: 2 }, fillcolor: 'rgba(239,68,68,0.25)' },
+                type: 'scatter',
+                mode: 'lines+markers',
+                x,
+                y,
+                line: { color: cor, width: 2 },
+                marker: { color: cor, size: 6 },
                 hovertemplate:
                     `<b>%{x}</b><br>` +
-                    `Abertura: %{open:.2f}<br>` +
-                    `Máxima: %{high:.2f}<br>` +
-                    `Mínima: %{low:.2f}<br>` +
-                    `Atual: %{close:.2f}<extra></extra>`,
+                    `Preço: %{y:.2f}<extra></extra>`,
             }] as never}
             layout={{
                 template: 'plotly_dark' as never,
@@ -130,64 +134,26 @@ function CandleDia({ row }: { row: PrecoLive }) {
                 font: { color: '#fff', family: 'Inter, sans-serif', size: 12 },
                 margin: { t: 16, r: 64, b: 44, l: 16 },
                 xaxis: {
-                    type: 'category',
+                    type: 'date',
                     tickfont: { size: 11 },
                     gridcolor: 'rgba(255,255,255,0.06)',
                     linecolor: 'rgba(255,255,255,0.1)',
-                    rangeslider: { visible: false },
                 },
                 yaxis: {
                     gridcolor: 'rgba(255,255,255,0.06)',
                     linecolor: 'rgba(255,255,255,0.1)',
                     tickfont: { size: 11 },
                     side: 'right',
-                    // margem extra em volta do candle
-                    range: [low - (high - low) * 0.5, high + (high - low) * 0.5],
+                    range: [yMin - pad, yMax + pad],
                 },
-                shapes: [
-                    // Linha de referência do fechamento anterior
-                    ...(row.VL_PRECO_FECHAMENTO_ANT != null ? [{
-                        type: 'line' as const,
-                        xref: 'paper' as const,
-                        yref: 'y' as const,
-                        x0: 0, x1: 1,
-                        y0: row.VL_PRECO_FECHAMENTO_ANT,
-                        y1: row.VL_PRECO_FECHAMENTO_ANT,
-                        line: { color: 'rgba(255,255,255,0.3)', width: 1, dash: 'dot' as const },
-                    }] : []),
-                ],
                 annotations: [
-                    // Label do fechamento anterior
-                    ...(row.VL_PRECO_FECHAMENTO_ANT != null ? [{
-                        xref: 'paper' as const,
-                        yref: 'y' as const,
-                        x: 1.01,
-                        y: row.VL_PRECO_FECHAMENTO_ANT,
-                        text: `Fech. Ant.<br>${formatNumero(row.VL_PRECO_FECHAMENTO_ANT)}`,
-                        showarrow: false,
-                        font: { size: 10, color: 'rgba(255,255,255,0.4)' },
-                        xanchor: 'left' as const,
-                        align: 'left' as const,
-                    }] : []),
-                    // Label da abertura
+                    // Label do último preço
                     {
                         xref: 'paper' as const,
                         yref: 'y' as const,
                         x: 1.01,
-                        y: open,
-                        text: `Abertura<br>${formatNumero(open)}`,
-                        showarrow: false,
-                        font: { size: 10, color: 'rgba(234,179,8,0.7)' },
-                        xanchor: 'left' as const,
-                        align: 'left' as const,
-                    },
-                    // Label do preço atual
-                    {
-                        xref: 'paper' as const,
-                        yref: 'y' as const,
-                        x: 1.01,
-                        y: close,
-                        text: `Atual<br>${formatNumero(close)}`,
+                        y: p1 ?? yMax,
+                        text: `Atual<br>${formatNumero(p1)}`,
                         showarrow: false,
                         font: { size: 10, color: cor },
                         xanchor: 'left' as const,
@@ -218,9 +184,10 @@ function Stat({ label, value, className }: { label: string; value: string; class
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function PrecosAoVivo() {
-    const { data: ativos, isLoading: loadingAtivos } = useAtivos();
+    const { data: ativos, isLoading: loadingAtivos } = useAtivosOnline();
     const { data, isLoading: loadingPrecos, error, dataUpdatedAt } = usePrecosLive();
     const [cdAtivo, setCdAtivo] = useState<string | null>(null);
+    const { data: serie24h, isLoading: loadingSerie } = usePrecosLiveSerie(cdAtivo, 24);
 
     const ativosUnicos = useMemo(() => {
         if (!ativos) return [];
@@ -324,9 +291,15 @@ export default function PrecosAoVivo() {
                         <RangePregao row={row} />
                     </div>
 
-                    {/* Candle do dia */}
+                    {/* Série das últimas 24h (snapshots de 30min) */}
                     <div className="pv-candle-section">
-                        <CandleDia row={row} />
+                        <Serie24h points={serie24h ?? []} />
+                        {!loadingSerie && (!serie24h || serie24h.length === 0) && (
+                            <div className="pg-hint" style={{ marginTop: 0 }}>
+                                <i className="fas fa-chart-line" />
+                                <span>Sem snapshots suficientes nas últimas 24h para este ativo.</span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Grid de stats OHLC */}
