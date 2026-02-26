@@ -1,16 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAtivos } from '@/hooks/useAtivos';
 import {
     useSimPortfolios,
+    useSimFundCarteiras,
     useCreateSimTrade,
     useUpdateSimTrade,
     useDeleteSimTrade,
     useSimTrades,
+    useSimFundFluxos,
+    useSimFundCotaSerie,
 } from '@/hooks/useSimulador';
 import { formatNumero } from '@/utils/formatBR';
 import './Simulador.css';
 
-const SIDES = ['BUY', 'SELL', 'SHORT', 'COVER'] as const;
+const SIDES = ['BUY', 'SELL'] as const;
 
 type Side = (typeof SIDES)[number];
 
@@ -29,6 +32,38 @@ function toLocalDateTime(value?: string | null) {
     return value.replace(' ', 'T').slice(0, 16);
 }
 
+function getApiErrorDetail(error: unknown): string {
+    const err = error as {
+        response?: {
+            data?: {
+                detail?: unknown;
+                error?: string;
+                message?: string;
+            };
+        };
+        message?: string;
+    };
+
+    const detail = err.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+
+    if (Array.isArray(detail)) {
+        const msgs = detail
+            .map(item => {
+                if (typeof item === 'string') return item;
+                if (item && typeof item === 'object' && 'msg' in item) {
+                    return String((item as { msg?: unknown }).msg ?? '');
+                }
+                return '';
+            })
+            .filter(Boolean);
+        if (msgs.length > 0) return msgs.join(' | ');
+    }
+
+    const fallback = err.response?.data?.error || err.response?.data?.message || err.message;
+    return fallback || 'Não foi possível concluir a operação. Verifique os dados e tente novamente.';
+}
+
 export default function SimuladorOperacoes() {
     const { data: portfolios } = useSimPortfolios();
     const { data: ativos } = useAtivos();
@@ -43,11 +78,35 @@ export default function SimuladorOperacoes() {
     const [custo, setCusto] = useState('0');
     const [obs, setObs] = useState('');
     const [editingTradeId, setEditingTradeId] = useState<number | null>(null);
+    const [formError, setFormError] = useState<string>('');
 
     const createTrade = useCreateSimTrade();
     const updateTrade = useUpdateSimTrade();
     const deleteTrade = useDeleteSimTrade();
     const { data: trades, isLoading, error } = useSimTrades(portfolioId);
+    const selectedPortfolio = useMemo(
+        () => (portfolios ?? []).find(p => p.ID_PORTFOLIO === portfolioId) ?? null,
+        [portfolios, portfolioId],
+    );
+    const fundoIdSelecionado = selectedPortfolio?.ID_FUNDO ?? null;
+    const carteirasFundoQuery = useSimFundCarteiras(fundoIdSelecionado);
+    const fluxosAteDataQuery = useSimFundFluxos(fundoIdSelecionado, undefined, dtTrade);
+    const cotaAteDataQuery = useSimFundCotaSerie(fundoIdSelecionado, undefined, dtTrade);
+
+    const caixaDisponivelCarteira = useMemo(() => {
+        if (!portfolioId) return null;
+        const row = (carteirasFundoQuery.data ?? []).find(c => c.ID_CARTEIRA === portfolioId);
+        if (!row) return null;
+        return Number(row.VL_SALDO_CAIXA ?? 0);
+    }, [carteirasFundoQuery.data, portfolioId]);
+
+    const valorEstimadoOrdem = useMemo(() => {
+        const q = Number(qtd);
+        const p = Number(pu);
+        const c = Number(custo || 0);
+        if (!Number.isFinite(q) || !Number.isFinite(p) || !Number.isFinite(c)) return 0;
+        return q * p + c;
+    }, [qtd, pu, custo]);
 
     const ativosUnicos = useMemo(() => {
         if (!ativos) return [];
@@ -57,6 +116,34 @@ export default function SimuladorOperacoes() {
         }
         return Array.from(map.values());
     }, [ativos]);
+
+    const carteirasOperaveis = useMemo(
+        () =>
+            (portfolios ?? []).filter(p => {
+                const contaRef = String(p.CONTA_REF ?? '').toUpperCase();
+                const nome = String(p.NM_PORTFOLIO ?? '').toUpperCase();
+                return contaRef !== 'CAIXA' && !nome.startsWith('CAIXA -');
+            }),
+        [portfolios],
+    );
+
+    useEffect(() => {
+        if (portfolioId && !carteirasOperaveis.some(p => p.ID_PORTFOLIO === portfolioId)) {
+            setPortfolioId(null);
+        }
+    }, [portfolioId, carteirasOperaveis]);
+
+    const fluxoLiquidoAteData = useMemo(() => {
+        const rows = fluxosAteDataQuery.data ?? [];
+        return rows.reduce((acc, item) => acc + (item.TP_FLUXO === 'APORTE' ? Number(item.VL_FLUXO ?? 0) : -Number(item.VL_FLUXO ?? 0)), 0);
+    }, [fluxosAteDataQuery.data]);
+
+    const temPlInicialAteData = useMemo(() => {
+        const rows = cotaAteDataQuery.data ?? [];
+        return rows.some(item => Number(item.VL_PL ?? 0) > 0);
+    }, [cotaAteDataQuery.data]);
+
+    const bloqueadoSemAporte = !!portfolioId && (fundoIdSelecionado == null || (fluxoLiquidoAteData <= 0 && !temPlInicialAteData));
 
     function resetForm() {
         setIdAtivo(null);
@@ -71,7 +158,12 @@ export default function SimuladorOperacoes() {
     }
 
     async function onSaveTrade() {
+        setFormError('');
         if (!portfolioId || !idAtivo) return;
+        if (bloqueadoSemAporte) {
+            setFormError('Fundo sem capitalização líquida até a data da operação. Faça aporte inicial antes de operar.');
+            return;
+        }
 
         const payload = {
             ID_PORTFOLIO: portfolioId,
@@ -85,14 +177,18 @@ export default function SimuladorOperacoes() {
             OBSERVACAO: obs || null,
         };
 
-        if (editingTradeId) {
-            await updateTrade.mutateAsync({ tradeId: editingTradeId, payload });
-        } else {
-            await createTrade.mutateAsync(payload);
-        }
+        try {
+            if (editingTradeId) {
+                await updateTrade.mutateAsync({ tradeId: editingTradeId, payload });
+            } else {
+                await createTrade.mutateAsync(payload);
+            }
 
-        setObs('');
-        setEditingTradeId(null);
+            setObs('');
+            setEditingTradeId(null);
+        } catch (error) {
+            setFormError(getApiErrorDetail(error));
+        }
     }
 
     function onEditTrade(tradeId: number) {
@@ -130,7 +226,7 @@ export default function SimuladorOperacoes() {
                     <div className="pg-header-icon"><i className="fas fa-right-left" /></div>
                     <div className="pg-header-text">
                         <h1>Operações Simuladas</h1>
-                        <p>Lançamento manual de trades da carteira.</p>
+                        <p>Lançamento manual de operações BUY/SELL da carteira.</p>
                     </div>
                 </div>
             </div>
@@ -142,7 +238,7 @@ export default function SimuladorOperacoes() {
                         <label className="pg-select-label">Carteira</label>
                         <select className="sim-select" value={portfolioId ?? ''} onChange={e => setPortfolioId(e.target.value ? Number(e.target.value) : null)}>
                             <option value="">— selecione —</option>
-                            {(portfolios ?? []).map(p => <option key={p.ID_PORTFOLIO} value={p.ID_PORTFOLIO}>{p.NM_PORTFOLIO}</option>)}
+                            {carteirasOperaveis.map(p => <option key={p.ID_PORTFOLIO} value={p.ID_PORTFOLIO}>{p.NM_PORTFOLIO}</option>)}
                         </select>
                     </div>
                     <div>
@@ -183,7 +279,7 @@ export default function SimuladorOperacoes() {
                         <input className="sim-input" value={obs} onChange={e => setObs(e.target.value)} placeholder="Opcional" />
                     </div>
                     <div>
-                        <button className="sim-btn" onClick={onSaveTrade} disabled={isSaving || isDeleting || !portfolioId || !idAtivo}>
+                        <button className="sim-btn" onClick={onSaveTrade} disabled={isSaving || isDeleting || !portfolioId || !idAtivo || bloqueadoSemAporte}>
                             {isSaving ? 'Salvando…' : editingTradeId ? 'Atualizar operação' : 'Salvar operação'}
                         </button>
                     </div>
@@ -195,6 +291,25 @@ export default function SimuladorOperacoes() {
                         </div>
                     )}
                 </div>
+                {portfolioId && (
+                    <p style={{ marginTop: '0.65rem', marginBottom: 0, color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
+                        {carteirasFundoQuery.isLoading
+                            ? 'Carregando caixa disponível da carteira…'
+                            : caixaDisponivelCarteira == null
+                                ? 'Caixa disponível: não identificado para a carteira selecionada.'
+                                : `Caixa disponível: ${formatNumero(caixaDisponivelCarteira, 2)} • Valor estimado da ordem: ${formatNumero(valorEstimadoOrdem, 2)}`}
+                    </p>
+                )}
+                {bloqueadoSemAporte && (
+                    <p style={{ marginTop: '0.65rem', marginBottom: 0, color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
+                        Operação bloqueada: este fundo ainda não possui aporte líquido até {dtTrade}. Cadastre PL inicial no fundo ou registre aporte em Fundos.
+                    </p>
+                )}
+                {formError && (
+                    <div className="pg-error" style={{ marginTop: '0.65rem' }}>
+                        <i className="fas fa-triangle-exclamation" /> {formError}
+                    </div>
+                )}
             </div>
 
             {isLoading && <div className="pg-loading"><i className="fas fa-circle-notch fa-spin" /> Carregando operações…</div>}

@@ -54,7 +54,7 @@ export default function Sidebar() {
     return (
         <aside className="sidebar">
             <div className="sidebar-header">
-                <NavLink to="/" className="sidebar-logo text-accent">Fundinho</NavLink>
+                <NavLink to="/" className="sidebar-logo text-accent">F</NavLink>
             </div>
             <nav className="sidebar-nav">
                 {currentSection.navItems.map(item => (

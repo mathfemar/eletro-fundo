@@ -58,8 +58,18 @@ export const sections: Section[] = [
                 icon: 'fas fa-flask',
             },
             {
-                label: 'Carteiras',
-                href: '/simulador/carteiras',
+                label: 'Setup do Fundo',
+                href: '/simulador/fundos/cadastro',
+                icon: 'fas fa-file-circle-plus',
+            },
+            {
+                label: 'Cotistas',
+                href: '/simulador/cotistas',
+                icon: 'fas fa-users',
+            },
+            {
+                label: 'Carteiras e Alocação',
+                href: '/simulador/alocacoes',
                 icon: 'fas fa-wallet',
             },
             {
@@ -68,14 +78,29 @@ export const sections: Section[] = [
                 icon: 'fas fa-right-left',
             },
             {
-                label: 'Posições',
-                href: '/simulador/posicoes',
-                icon: 'fas fa-layer-group',
+                label: 'Renda Fixa',
+                href: '/simulador/renda-fixa',
+                icon: 'fas fa-file-invoice-dollar',
             },
             {
-                label: 'Fundos',
+                label: 'Aportes/Resgates',
+                href: '/simulador/resgates',
+                icon: 'fas fa-hand-holding-dollar',
+            },
+            {
+                label: 'Visão Consolidada',
                 href: '/simulador/fundos',
                 icon: 'fas fa-building-columns',
+            },
+            {
+                label: 'L · Carteiras',
+                href: '/simulador/carteiras',
+                icon: 'fas fa-wallet',
+            },
+            {
+                label: 'L · Posições',
+                href: '/simulador/posicoes',
+                icon: 'fas fa-layer-group',
             },
         ],
     },

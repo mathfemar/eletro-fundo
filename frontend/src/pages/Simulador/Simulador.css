@@ -142,6 +142,25 @@
     border-bottom: none;
 }
 
+.sim-table--cotistas {
+    table-layout: auto;
+}
+
+.sim-table--cotistas .sim-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.sim-table--cotistas tbody tr:hover {
+    background: var(--color-bg-card-hover);
+}
+
+.sim-table--cotistas td,
+.sim-table--cotistas th {
+    padding-top: 0.72rem;
+    padding-bottom: 0.72rem;
+}
+
 .sim-kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

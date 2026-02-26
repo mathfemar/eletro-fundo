@@ -24,10 +24,46 @@ async def _scheduler_live():
     while True:
         try:
             from app.services.precos.pricing_live_service import PricingLiveService
-            result = await asyncio.get_event_loop().run_in_executor(
+            result_precos = await asyncio.get_event_loop().run_in_executor(
                 None, PricingLiveService().atualizar_todos,
             )
-            logger.info("⏱ Live update: %s", result)
+
+            from app.api.routers.simulador import (
+                _list_active_fundo_ids,
+                capture_pnl_live_fundo_sync,
+                close_pnl_day_fundo_sync,
+            )
+
+            def _atualizar_fundos_sync() -> dict:
+                itens = []
+                today_iso = date.today().isoformat()
+                for fid in _list_active_fundo_ids():
+                    itens.append(capture_pnl_live_fundo_sync(fundo_id=fid, fonte="scheduler_yf"))
+                    # Fecha dia provisoriamente e recomputa cota para manter retorno atualizado
+                    try:
+                        close_pnl_day_fundo_sync(
+                            fundo_id=fid,
+                            dt_referencia=today_iso,
+                            allow_recompute=False,
+                            update_cota=True,
+                        )
+                    except Exception as exc_close:
+                        logger.warning("⏱ Falha no fechamento provisório do fundo %s: %s", fid, exc_close)
+                return {"items": itens, "total": len(itens)}
+
+            result_fundos = await asyncio.get_event_loop().run_in_executor(
+                None,
+                _atualizar_fundos_sync,
+            )
+
+            logger.info(
+                "⏱ Live update concluído | preços=%s | fundos=%s",
+                result_precos,
+                {
+                    "total": result_fundos.get("total", 0),
+                    "ids": [item.get("ID_FUNDO") for item in result_fundos.get("items", [])],
+                },
+            )
         except asyncio.CancelledError:
             logger.info("⏱ Live scheduler cancelado")
             break

@@ -170,6 +170,61 @@ def create_tables() -> None:
             ON FAT_CARTEIRA_TRADE(ID_ATIVO)
     """)
 
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_CARTEIRA_POSICAO_DIARIA (
+            ID_CARTEIRA        INTEGER NOT NULL,
+            DT_REFERENCIA      DATE NOT NULL,
+            ID_ATIVO           INTEGER NOT NULL,
+            CD_ATIVO           TEXT NOT NULL,
+            MOEDA              TEXT,
+            FX_ATUAL           REAL DEFAULT 1,
+            QTD_LIQ            REAL DEFAULT 0,
+            PRECO_MEDIO        REAL,
+            PRECO_ATUAL        REAL,
+            CUSTO_TOTAL        REAL,
+            VALOR_MERCADO      REAL,
+            PNL_REALIZADO      REAL,
+            PNL_ABERTO         REAL,
+            PNL_TOTAL          REAL,
+            DT_CARGA           DATETIME DEFAULT (datetime('now', '-3 hours')),
+            PRIMARY KEY (ID_CARTEIRA, DT_REFERENCIA, ID_ATIVO),
+            FOREIGN KEY (ID_CARTEIRA) REFERENCES DIM_CARTEIRA(ID_CARTEIRA),
+            FOREIGN KEY (ID_ATIVO) REFERENCES DIM_ATIVO(ID_ATIVO)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_posicao_diaria_carteira_dt
+            ON FAT_CARTEIRA_POSICAO_DIARIA(ID_CARTEIRA, DT_REFERENCIA)
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_CARTEIRA_MOVIMENTO_CAIXA (
+            ID_MOVIMENTO         INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID_FUNDO             INTEGER NOT NULL,
+            ID_CARTEIRA          INTEGER NOT NULL,
+            ID_CARTEIRA_REF      INTEGER,
+            DT_MOVIMENTO         DATE NOT NULL,
+            TP_MOVIMENTO         TEXT NOT NULL,
+            VL_MOVIMENTO         REAL NOT NULL,
+            DS_OBSERVACAO        TEXT,
+            DT_CARGA             DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_FUNDO) REFERENCES DIM_FUNDO(ID_FUNDO),
+            FOREIGN KEY (ID_CARTEIRA) REFERENCES DIM_CARTEIRA(ID_CARTEIRA),
+            FOREIGN KEY (ID_CARTEIRA_REF) REFERENCES DIM_CARTEIRA(ID_CARTEIRA)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_mov_caixa_fundo_dt
+            ON FAT_CARTEIRA_MOVIMENTO_CAIXA(ID_FUNDO, DT_MOVIMENTO)
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_mov_caixa_carteira_dt
+            ON FAT_CARTEIRA_MOVIMENTO_CAIXA(ID_CARTEIRA, DT_MOVIMENTO)
+    """)
+
     # ── PnL live e fechamento diário de fundo ──────────────────────────────
     execute("""
         CREATE TABLE IF NOT EXISTS FAT_FUNDO_PNL_LIVE (
@@ -216,6 +271,11 @@ def create_tables() -> None:
     """)
 
     execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_pnl_fechamento_fundo_dt
+            ON FAT_FUNDO_PNL_FECHAMENTO(ID_FUNDO, DT_REFERENCIA)
+    """)
+
+    execute("""
         CREATE TABLE IF NOT EXISTS FAT_FUNDO_COTA_DIARIA (
             ID_FUNDO            INTEGER NOT NULL,
             DT_REFERENCIA       DATE NOT NULL,
@@ -234,6 +294,190 @@ def create_tables() -> None:
     execute("""
         CREATE INDEX IF NOT EXISTS idx_fundo_cota_diaria_dt
             ON FAT_FUNDO_COTA_DIARIA(DT_REFERENCIA)
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_cota_diaria_fundo_dt
+            ON FAT_FUNDO_COTA_DIARIA(ID_FUNDO, DT_REFERENCIA)
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_COTISTA_POSICAO_DIARIA (
+            ID_FUNDO             INTEGER NOT NULL,
+            ID_TITULAR           INTEGER NOT NULL,
+            DT_REFERENCIA        DATE NOT NULL,
+            NM_TITULAR           TEXT,
+            VL_COTA              REAL NOT NULL,
+            VL_APORTADO_BRUTO    REAL DEFAULT 0,
+            VL_RESGATADO_BRUTO   REAL DEFAULT 0,
+            VL_INVERTIDO_LIQ     REAL DEFAULT 0,
+            QT_COTAS             REAL DEFAULT 0,
+            VL_PL_COTISTA        REAL DEFAULT 0,
+            VL_PNL_COTISTA       REAL DEFAULT 0,
+            DT_CARGA             DATETIME DEFAULT (datetime('now', '-3 hours')),
+            PRIMARY KEY (ID_FUNDO, ID_TITULAR, DT_REFERENCIA),
+            FOREIGN KEY (ID_FUNDO) REFERENCES DIM_FUNDO(ID_FUNDO),
+            FOREIGN KEY (ID_TITULAR) REFERENCES DIM_TITULAR(ID_TITULAR)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_cotista_posicao_diaria_fundo_dt
+            ON FAT_COTISTA_POSICAO_DIARIA(ID_FUNDO, DT_REFERENCIA)
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_FUNDO_FLUXO_CAPITAL (
+            ID_FLUXO          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID_FUNDO          INTEGER NOT NULL,
+            ID_TITULAR        INTEGER,
+            DT_REFERENCIA     DATE NOT NULL,
+            TP_FLUXO          TEXT NOT NULL CHECK (TP_FLUXO IN ('APORTE','RESGATE')),
+            VL_FLUXO          REAL NOT NULL,
+            OBSERVACAO        TEXT,
+            DT_CARGA          DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_FUNDO) REFERENCES DIM_FUNDO(ID_FUNDO),
+            FOREIGN KEY (ID_TITULAR) REFERENCES DIM_TITULAR(ID_TITULAR)
+        )
+    """)
+
+    # Migração para bases onde FAT_FUNDO_FLUXO_CAPITAL foi criada sem ID_TITULAR
+    try:
+        execute("ALTER TABLE FAT_FUNDO_FLUXO_CAPITAL ADD COLUMN ID_TITULAR INTEGER")
+    except Exception:
+        pass
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_fluxo_capital_fundo_dt
+            ON FAT_FUNDO_FLUXO_CAPITAL(ID_FUNDO, DT_REFERENCIA)
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_fluxo_capital_titular_dt
+            ON FAT_FUNDO_FLUXO_CAPITAL(ID_FUNDO, ID_TITULAR, DT_REFERENCIA)
+    """)
+
+    # ── Liquidez por ativo e fluxo de resgates (decisão do gestor) ─────────
+    execute("""
+        CREATE TABLE IF NOT EXISTS SIM_ATIVO_LIQUIDEZ (
+            ID_ATIVO            INTEGER PRIMARY KEY,
+            NR_DIAS_LIQUIDEZ    INTEGER NOT NULL DEFAULT 0,
+            DS_REGRA            TEXT,
+            ST_ATIVO            INTEGER DEFAULT 1,
+            DT_CRIACAO          DATETIME DEFAULT (datetime('now', '-3 hours')),
+            DT_ATUALIZACAO      DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_ATIVO) REFERENCES DIM_ATIVO(ID_ATIVO)
+        )
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS SIM_RF_TITULO (
+            ID_TITULO            INTEGER PRIMARY KEY AUTOINCREMENT,
+            CD_TITULO            TEXT NOT NULL UNIQUE,
+            NM_TITULO            TEXT,
+            ID_ATIVO             INTEGER,
+            DT_VENCIMENTO        DATE NOT NULL,
+            DT_RESGATE           DATE,
+            VL_TAXA_CONTRATADA   REAL,
+            ST_ATIVO             INTEGER DEFAULT 1,
+            DT_CRIACAO           DATETIME DEFAULT (datetime('now', '-3 hours')),
+            DT_ATUALIZACAO       DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_ATIVO) REFERENCES DIM_ATIVO(ID_ATIVO)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_rf_titulo_liquidez
+            ON SIM_RF_TITULO(COALESCE(DT_RESGATE, DT_VENCIMENTO), ST_ATIVO)
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_FUNDO_RESGATE_SOLICITACAO (
+            ID_SOLICITACAO      INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID_FUNDO            INTEGER NOT NULL,
+            ID_TITULAR          INTEGER,
+            DT_SOLICITACAO      DATE NOT NULL,
+            VL_RESGATE          REAL NOT NULL,
+            ST_STATUS           TEXT NOT NULL DEFAULT 'ABERTA'
+                                CHECK (ST_STATUS IN ('ABERTA','PLANEJADA','PARCIAL','LIQUIDADA','CANCELADA')),
+            DS_OBSERVACAO       TEXT,
+            DT_CARGA            DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_FUNDO) REFERENCES DIM_FUNDO(ID_FUNDO),
+            FOREIGN KEY (ID_TITULAR) REFERENCES DIM_TITULAR(ID_TITULAR)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_resgate_solicitacao_fundo_dt
+            ON FAT_FUNDO_RESGATE_SOLICITACAO(ID_FUNDO, DT_SOLICITACAO)
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_FUNDO_RESGATE_PLANO (
+            ID_PLANO            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID_SOLICITACAO      INTEGER NOT NULL,
+            NR_REVISAO          INTEGER NOT NULL DEFAULT 1,
+            CD_METODO           TEXT NOT NULL DEFAULT 'MANUAL_GESTOR',
+            ST_STATUS           TEXT NOT NULL DEFAULT 'RASCUNHO'
+                                CHECK (ST_STATUS IN ('RASCUNHO','APROVADO','EXECUTADO','CANCELADO')),
+            DS_JUSTIFICATIVA    TEXT,
+            DT_CARGA            DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_SOLICITACAO) REFERENCES FAT_FUNDO_RESGATE_SOLICITACAO(ID_SOLICITACAO)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_resgate_plano_solicitacao
+            ON FAT_FUNDO_RESGATE_PLANO(ID_SOLICITACAO, NR_REVISAO)
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_FUNDO_RESGATE_ITEM (
+            ID_ITEM                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID_PLANO                INTEGER NOT NULL,
+            ID_ATIVO                INTEGER NOT NULL,
+            VL_LIQUIDAR             REAL NOT NULL,
+            NR_DIAS_LIQUIDEZ        INTEGER NOT NULL DEFAULT 0,
+            DT_LIQUIDEZ_PREVISTA    DATE,
+            DS_OBSERVACAO           TEXT,
+            DT_CARGA                DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_PLANO) REFERENCES FAT_FUNDO_RESGATE_PLANO(ID_PLANO),
+            FOREIGN KEY (ID_ATIVO) REFERENCES DIM_ATIVO(ID_ATIVO)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_resgate_item_plano
+            ON FAT_FUNDO_RESGATE_ITEM(ID_PLANO)
+    """)
+
+    execute("""
+        CREATE TABLE IF NOT EXISTS FAT_FUNDO_RESGATE_EVENTO (
+            ID_EVENTO               INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID_FUNDO                INTEGER NOT NULL,
+            ID_SOLICITACAO          INTEGER NOT NULL,
+            ID_PLANO                INTEGER NOT NULL,
+            DT_REFERENCIA           DATE NOT NULL,
+            TP_EVENTO               TEXT NOT NULL
+                                   CHECK (TP_EVENTO IN ('EXEC_PARCIAL','EXEC_TOTAL','OVERRIDE_MTM')),
+            VL_EVENTO               REAL DEFAULT 0,
+            DS_JUSTIFICATIVA        TEXT,
+            DS_OBSERVACAO           TEXT,
+            DT_CARGA                DATETIME DEFAULT (datetime('now', '-3 hours')),
+            FOREIGN KEY (ID_FUNDO) REFERENCES DIM_FUNDO(ID_FUNDO),
+            FOREIGN KEY (ID_SOLICITACAO) REFERENCES FAT_FUNDO_RESGATE_SOLICITACAO(ID_SOLICITACAO),
+            FOREIGN KEY (ID_PLANO) REFERENCES FAT_FUNDO_RESGATE_PLANO(ID_PLANO)
+        )
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_resgate_evento_plano
+            ON FAT_FUNDO_RESGATE_EVENTO(ID_PLANO, DT_REFERENCIA)
+    """)
+
+    execute("""
+        CREATE INDEX IF NOT EXISTS idx_fundo_resgate_evento_solic
+            ON FAT_FUNDO_RESGATE_EVENTO(ID_SOLICITACAO, DT_REFERENCIA)
     """)
 
     execute("""

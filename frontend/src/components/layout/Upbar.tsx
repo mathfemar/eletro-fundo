@@ -47,7 +47,7 @@ export default function Upbar() {
                     }`} />
                     <span>{refresh.isPending ? 'Atualizando…' : done ? 'Atualizado!' : 'Atualizar Cache'}</span>
                 </button>
-                <span className="upbar-breadcrumb">Fundinho</span>
+                <span className="upbar-breadcrumb">F</span>
             </div>
         </header>
     );
