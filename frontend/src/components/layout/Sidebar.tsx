@@ -43,13 +43,15 @@ function NavItemComponent({ item, depth = 0 }: { item: NavItem; depth?: number }
 
 export default function Sidebar() {
     const location = useLocation();
-    // Evita que basePath '/' faça match em tudo com startsWith
-    const currentSection =
-        sections.find(s =>
-            s.basePath === '/'
-                ? location.pathname === '/'
-                : location.pathname.startsWith(s.basePath)
-        ) ?? sections[0];
+    // Match section by navItem hrefs (covers split sections under /simulador/)
+    const matchSection = (s: typeof sections[0]) => {
+        if (s.basePath === '/' && location.pathname === '/') return true;
+        if (s.basePath !== '/' && location.pathname.startsWith(s.basePath)) return true;
+        return s.navItems.some(item =>
+            location.pathname === item.href || location.pathname.startsWith(item.href + '/')
+        );
+    };
+    const currentSection = sections.find(matchSection) ?? sections[0];
 
     return (
         <aside className="sidebar">

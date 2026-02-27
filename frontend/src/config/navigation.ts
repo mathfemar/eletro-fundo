@@ -48,15 +48,10 @@ export const sections: Section[] = [
         ],
     },
     {
-        id: 'simulador',
-        label: 'Simulador',
-        basePath: '/simulador',
+        id: 'gestao',
+        label: 'Gestão',
+        basePath: '/simulador/gestao',
         navItems: [
-            {
-                label: 'Visão Geral',
-                href: '/simulador',
-                icon: 'fas fa-flask',
-            },
             {
                 label: 'Setup do Fundo',
                 href: '/simulador/fundos/cadastro',
@@ -72,6 +67,13 @@ export const sections: Section[] = [
                 href: '/simulador/alocacoes',
                 icon: 'fas fa-wallet',
             },
+        ],
+    },
+    {
+        id: 'operacoes',
+        label: 'Operações',
+        basePath: '/simulador/operacoes',
+        navItems: [
             {
                 label: 'Operações',
                 href: '/simulador/operacoes',
@@ -87,6 +89,13 @@ export const sections: Section[] = [
                 href: '/simulador/resgates',
                 icon: 'fas fa-hand-holding-dollar',
             },
+        ],
+    },
+    {
+        id: 'visao',
+        label: 'Visão',
+        basePath: '/simulador/fundos',
+        navItems: [
             {
                 label: 'Visão Consolidada',
                 href: '/simulador/fundos',

@@ -35,7 +35,8 @@ export default function SimuladorCotistas() {
     const [documento, setDocumento] = useState('');
 
     const posicaoMap = useMemo(() => {
-        const map = new Map<number, (typeof posicaoQuery.data.items)[number]>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const map = new Map<number, any>();
         (posicaoQuery.data?.items ?? []).forEach(item => {
             map.set(item.ID_TITULAR, item);
         });

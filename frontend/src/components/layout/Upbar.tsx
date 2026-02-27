@@ -22,11 +22,15 @@ export default function Upbar() {
         <header className="upbar">
             <nav className="upbar-sections">
                 {upbarSections.map(section => {
-                    const isActive = location.pathname.startsWith(section.basePath);
+                    const isActive =
+                        (section.basePath !== '/' && location.pathname.startsWith(section.basePath)) ||
+                        section.navItems.some(item =>
+                            location.pathname === item.href || location.pathname.startsWith(item.href + '/')
+                        );
                     return (
                         <NavLink
                             key={section.id}
-                            to={section.basePath}
+                            to={section.navItems[0]?.href ?? section.basePath}
                             className={`upbar-section-link${isActive ? ' active' : ''}`}
                         >
                             {section.label}
@@ -41,10 +45,9 @@ export default function Upbar() {
                     disabled={refresh.isPending}
                     title="Atualizar lista de ativos e preços live"
                 >
-                    <i className={`fas ${
-                        refresh.isPending ? 'fa-circle-notch fa-spin' :
-                        done ? 'fa-check' : 'fa-rotate-right'
-                    }`} />
+                    <i className={`fas ${refresh.isPending ? 'fa-circle-notch fa-spin' :
+                            done ? 'fa-check' : 'fa-rotate-right'
+                        }`} />
                     <span>{refresh.isPending ? 'Atualizando…' : done ? 'Atualizado!' : 'Atualizar Cache'}</span>
                 </button>
                 <span className="upbar-breadcrumb">F</span>

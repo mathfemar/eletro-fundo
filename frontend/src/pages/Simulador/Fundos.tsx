@@ -20,18 +20,12 @@ function hojeISO() {
     return new Date().toISOString().slice(0, 10);
 }
 
-function diasAtrasISO(days: number) {
-    const d = new Date();
-    d.setDate(d.getDate() - days);
-    return d.toISOString().slice(0, 10);
-}
-
 export default function SimuladorFundos() {
     const { data: fundos } = useSimFundos();
     const { data: titulares } = useSimTitulares();
 
     const [fundoId, setFundoId] = useState<number | null>(null);
-    const [dtInicio, setDtInicio] = useState(diasAtrasISO(60));
+    const [dtInicio, setDtInicio] = useState('');
     const [dtFim, setDtFim] = useState(hojeISO());
 
     const dashboardQuery = useSimFundDashboard(fundoId, dtInicio, dtFim, dtFim);
@@ -148,7 +142,18 @@ export default function SimuladorFundos() {
                 <div className="pg-select-group">
                     <label className="pg-select-label">Fundo</label>
                     <div className="pg-select-wrap">
-                        <select className="pg-select" value={fundoId ?? ''} onChange={e => setFundoId(e.target.value ? Number(e.target.value) : null)}>
+                        <select
+                            className="pg-select"
+                            value={fundoId ?? ''}
+                            onChange={e => {
+                                const id = e.target.value ? Number(e.target.value) : null;
+                                setFundoId(id);
+                                const fundo = (fundos ?? []).find(f => f.ID_FUNDO === id);
+                                const inicio = fundo?.DT_INICIO ?? fundo?.DT_CRIACAO?.slice(0, 10) ?? '';
+                                setDtInicio(inicio);
+                                setDtFim(hojeISO());
+                            }}
+                        >
                             <option value="">— selecione —</option>
                             {(fundos ?? []).map(f => (
                                 <option key={f.ID_FUNDO} value={f.ID_FUNDO}>{f.NM_FUNDO}</option>
@@ -374,6 +379,61 @@ export default function SimuladorFundos() {
                                 </table>
                             </div>
                         )}
+                    </div>
+
+                    <div className="sim-chart-grid" style={{ marginBottom: '0.8rem' }}>
+                        <div className="sim-card sim-chart-card">
+                            <div className="sim-card-title">Caixa vs. Mercado</div>
+                            <Plot
+                                data={[
+                                    {
+                                        values: [Math.max(0, plKpi - baseExposicao), baseExposicao],
+                                        labels: ['Caixa', 'Ativos'],
+                                        type: 'pie',
+                                        hole: 0.6,
+                                        marker: { colors: ['#94a3b8', '#3b82f6'] },
+                                        textinfo: 'label+percent',
+                                        hoverinfo: 'label+value',
+                                        hovertemplate: '<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percent}<extra></extra>'
+                                    }
+                                ]}
+                                layout={{
+                                    template: 'plotly_dark' as never,
+                                    paper_bgcolor: 'rgba(0,0,0,0)',
+                                    plot_bgcolor: 'rgba(0,0,0,0)',
+                                    margin: { l: 20, r: 20, t: 20, b: 20 },
+                                    showlegend: false,
+                                }}
+                                style={{ width: '100%', height: 260 }}
+                                config={{ displayModeBar: false, responsive: true }}
+                            />
+                        </div>
+
+                        <div className="sim-card sim-chart-card">
+                            <div className="sim-card-title">Composição da Carteira</div>
+                            <Plot
+                                data={[
+                                    {
+                                        values: fundPosItems.filter(r => Math.abs(Number(r.VALOR_MERCADO ?? 0)) > 1).map(r => Math.abs(Number(r.VALOR_MERCADO))),
+                                        labels: fundPosItems.filter(r => Math.abs(Number(r.VALOR_MERCADO ?? 0)) > 1).map(r => r.CD_ATIVO),
+                                        type: 'pie',
+                                        hole: 0.6,
+                                        textinfo: 'label+percent',
+                                        hoverinfo: 'label+value',
+                                        hovertemplate: '<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percent}<extra></extra>'
+                                    }
+                                ]}
+                                layout={{
+                                    template: 'plotly_dark' as never,
+                                    paper_bgcolor: 'rgba(0,0,0,0)',
+                                    plot_bgcolor: 'rgba(0,0,0,0)',
+                                    margin: { l: 20, r: 20, t: 20, b: 20 },
+                                    showlegend: false,
+                                }}
+                                style={{ width: '100%', height: 260 }}
+                                config={{ displayModeBar: false, responsive: true }}
+                            />
+                        </div>
                     </div>
 
                     <div className="sim-chart-grid">

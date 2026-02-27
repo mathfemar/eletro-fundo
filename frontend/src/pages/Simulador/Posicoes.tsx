@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import Plot from 'react-plotly.js';
 import { useSimFundos, useSimPortfolios, useSimPositions, useSimFundPositions } from '@/hooks/useSimulador';
 import { formatNumero } from '@/utils/formatBR';
 import './Simulador.css';
@@ -109,6 +110,36 @@ export default function SimuladorPosicoes() {
                     <div className="sim-kpi">
                         <div className="sim-kpi-label">Exposição Líquida</div>
                         <div className="sim-kpi-value">{formatNumero(exposicaoLiquida, 2)}</div>
+                    </div>
+                </div>
+            )}
+
+            {hasSelection && items.length > 0 && (
+                <div className="sim-chart-grid" style={{ marginBottom: '0.8rem', gridTemplateColumns: 'minmax(0, 400px)' }}>
+                    <div className="sim-card sim-chart-card">
+                        <div className="sim-card-title">Composição (Market Value)</div>
+                        <Plot
+                            data={[
+                                {
+                                    values: items.filter(r => Math.abs(Number(r.VALOR_MERCADO ?? 0)) > 1).map(r => Math.abs(Number(r.VALOR_MERCADO))),
+                                    labels: items.filter(r => Math.abs(Number(r.VALOR_MERCADO ?? 0)) > 1).map(r => r.CD_ATIVO),
+                                    type: 'pie',
+                                    hole: 0.6,
+                                    textinfo: 'label+percent',
+                                    hoverinfo: 'label+value',
+                                    hovertemplate: '<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percent}<extra></extra>'
+                                }
+                            ]}
+                            layout={{
+                                template: 'plotly_dark' as never,
+                                paper_bgcolor: 'rgba(0,0,0,0)',
+                                plot_bgcolor: 'rgba(0,0,0,0)',
+                                margin: { l: 20, r: 20, t: 20, b: 20 },
+                                showlegend: false,
+                            }}
+                            style={{ width: '100%', height: 260 }}
+                            config={{ displayModeBar: false, responsive: true }}
+                        />
                     </div>
                 </div>
             )}

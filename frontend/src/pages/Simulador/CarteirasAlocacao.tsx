@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import Plot from 'react-plotly.js';
 import {
     useSimFundos,
     useSimTitulares,
@@ -216,6 +217,40 @@ export default function SimuladorCarteirasAlocacao() {
                         </div>
                     </div>
 
+                    <div className="sim-chart-grid" style={{ marginBottom: '0.8rem', gridTemplateColumns: 'minmax(0, 400px)' }}>
+                        <div className="sim-card sim-chart-card">
+                            <div className="sim-card-title">Alocação de Saldo em Conta</div>
+                            <Plot
+                                data={[
+                                    {
+                                        values: [
+                                            Math.max(0, caixa?.VL_SALDO_CAIXA ?? 0),
+                                            ...carteiras.filter(c => c.ID_CARTEIRA !== caixa?.ID_CARTEIRA && Math.abs(c.VL_SALDO_CAIXA ?? 0) > 1).map(c => Math.abs(c.VL_SALDO_CAIXA ?? 0))
+                                        ],
+                                        labels: [
+                                            'CAIXA LIVRE',
+                                            ...carteiras.filter(c => c.ID_CARTEIRA !== caixa?.ID_CARTEIRA && Math.abs(c.VL_SALDO_CAIXA ?? 0) > 1).map(c => c.NM_CARTEIRA ?? 'Carteira')
+                                        ],
+                                        type: 'pie',
+                                        hole: 0.6,
+                                        textinfo: 'label+percent',
+                                        hoverinfo: 'label+value',
+                                        hovertemplate: '<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percent}<extra></extra>'
+                                    }
+                                ]}
+                                layout={{
+                                    template: 'plotly_dark' as never,
+                                    paper_bgcolor: 'rgba(0,0,0,0)',
+                                    plot_bgcolor: 'rgba(0,0,0,0)',
+                                    margin: { l: 20, r: 20, t: 20, b: 20 },
+                                    showlegend: false,
+                                }}
+                                style={{ width: '100%', height: 260 }}
+                                config={{ displayModeBar: false, responsive: true }}
+                            />
+                        </div>
+                    </div>
+
                     <div className="sim-card">
                         <div className="sim-card-title">Carteiras do fundo</div>
                         <div className="sim-table-wrap">
@@ -226,7 +261,7 @@ export default function SimuladorCarteirasAlocacao() {
                                         <th>Carteira</th>
                                         <th>Titular</th>
                                         <th>Conta</th>
-                                        <th>Saldo Caixa</th>
+                                        <th>Saldo Conta Origem</th>
                                         <th>Ações</th>
                                     </tr>
                                 </thead>

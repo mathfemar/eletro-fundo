@@ -27,6 +27,7 @@ export interface SimFundo {
     ST_ATIVO: number | null;
     DT_CRIACAO: string | null;
     DT_ATUALIZACAO: string | null;
+    DT_INICIO: string | null;
 }
 
 export interface SimFundoCarteira {
