@@ -51,7 +51,8 @@ export default function SimuladorFundos() {
     const cotistasItems = dashboardQuery.data?.cotistas_posicao?.items ?? [];
     const last = rows.length ? rows[rows.length - 1] : null;
     const lastCota = cotaRows.length ? cotaRows[cotaRows.length - 1] : null;
-    const plKpi = Number(lastCota?.VL_PL ?? last?.VL_VALOR_MERCADO_TOTAL ?? 0);
+    const plKpi = Number(dashboardQuery.data?.resumo?.VL_PL_ULTIMO ?? 0);
+    const vlCaixaReal = Number(dashboardQuery.data?.resumo?.VL_CAIXA_REAL ?? 0);
 
     const x = useMemo(() => rows.map(r => r.DT_REFERENCIA), [rows]);
     const yPL = useMemo(() => rows.map(r => Number(r.VL_VALOR_MERCADO_TOTAL ?? 0)), [rows]);
@@ -387,7 +388,7 @@ export default function SimuladorFundos() {
                             <Plot
                                 data={[
                                     {
-                                        values: [Math.max(0, plKpi - baseExposicao), baseExposicao],
+                                        values: [Math.max(0, vlCaixaReal), baseExposicao],
                                         labels: ['Caixa', 'Ativos'],
                                         type: 'pie',
                                         hole: 0.6,

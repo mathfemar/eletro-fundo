@@ -1,0 +1,6 @@
+Encontrados 2 fundo(s). Verificando consistência...
+
+
+  === Fundo 18 ===
+  PL último fechamento (PNL_FECHAMENTO): 15,694.32
+  PL último resumo (dashboard):          15,694.32

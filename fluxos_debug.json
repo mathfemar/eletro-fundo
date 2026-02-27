@@ -1,0 +1,35 @@
+[
+  {
+    "ID_FLUXO": 11,
+    "ID_FUNDO": 18,
+    "ID_TITULAR": 8,
+    "NM_TITULAR": "MATHEUS",
+    "DT_REFERENCIA": "2025-02-25",
+    "TP_FLUXO": "APORTE",
+    "VL_FLUXO": 17000.0,
+    "OBSERVACAO": "SEED_INICIAL_SETUP",
+    "DT_CARGA": "2026-02-26 15:40:37"
+  },
+  {
+    "ID_FLUXO": 12,
+    "ID_FUNDO": 18,
+    "ID_TITULAR": 8,
+    "NM_TITULAR": "MATHEUS",
+    "DT_REFERENCIA": "2025-02-25",
+    "TP_FLUXO": "RESGATE",
+    "VL_FLUXO": 2207.48,
+    "OBSERVACAO": "CAIXA EXTRA",
+    "DT_CARGA": "2026-02-27 11:15:17"
+  },
+  {
+    "ID_FLUXO": 13,
+    "ID_FUNDO": 18,
+    "ID_TITULAR": 8,
+    "NM_TITULAR": "MATHEUS",
+    "DT_REFERENCIA": "2026-02-27",
+    "TP_FLUXO": "RESGATE",
+    "VL_FLUXO": 31.31,
+    "OBSERVACAO": null,
+    "DT_CARGA": "2026-02-27 14:37:36"
+  }
+]

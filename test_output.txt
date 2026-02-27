@@ -1,0 +1,19 @@
+Encontrados 2 fundo(s). Verificando consistência...
+
+
+  === Fundo 18 ===
+  PL último fechamento (PNL_FECHAMENTO): 15,694.32
+  PL último resumo (dashboard):          15,694.32
+  ✅ PL resumo == PL fechamento
+  VL_PL da cota diária:                  15,694.32
+  Cota: 1.061350  |  QT_COTAS: 14,787.132622
+  Cota × QT_COTAS = 15,694.32
+  ✅ VL_PL cota ≈ PL fechamento
+  ✅ Cota × QT_COTAS ≈ VL_PL
+  Soma PL cotistas:                      17,768.14
+  ❌ Soma PL cotistas (17,768.14) ≠ PL fundo (15,694.32)
+  ✅ PL gráfico ≈ PL cota (mesma data)
+  ⚠ Fundo 17 sem dados de fechamento/cota — pulando.
+
+============================================================
+❌ Há inconsistências. Revise os valores acima.

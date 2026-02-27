@@ -166,13 +166,23 @@ export default function SimuladorPosicoes() {
                         </thead>
                         <tbody>
                             {items.map(r => (
-                                <tr key={r.ID_ATIVO}>
-                                    <td>{r.CD_ATIVO}</td>
+                                <tr key={r.ID_ATIVO} className={r.ALERTAS ? 'row-alerta' : ''}>
+                                    <td>
+                                        {r.CD_ATIVO}
+                                        {r.ALERTAS && (
+                                            <span className="alerta-preco" title={r.ALERTAS.join(' ')}>
+                                                <i className="fas fa-exclamation-triangle" />
+                                            </span>
+                                        )}
+                                    </td>
                                     <td>{r.MOEDA}</td>
                                     <td>{formatNumero(r.FX_ATUAL, 2)}</td>
                                     <td>{formatNumero(r.QTD_LIQ, 2)}</td>
                                     <td>{formatNumero(r.PRECO_MEDIO, 2)}</td>
-                                    <td>{formatNumero(r.PRECO_ATUAL, 2)}</td>
+                                    <td>
+                                        {formatNumero(r.PRECO_ATUAL, 2)}
+                                        {r.SEM_PRECO_MERCADO && <span className="badge-pm">PM</span>}
+                                    </td>
                                     <td>{formatNumero(r.VALOR_MERCADO, 2)}</td>
                                     <td className={(r.PNL_REALIZADO ?? 0) >= 0 ? 'positivo' : 'negativo'}>{formatNumero(r.PNL_REALIZADO, 2)}</td>
                                     <td className={(r.PNL_ABERTO ?? 0) >= 0 ? 'positivo' : 'negativo'}>{formatNumero(r.PNL_ABERTO, 2)}</td>

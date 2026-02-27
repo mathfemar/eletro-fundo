@@ -1,13 +1,11 @@
 """
-sim/ — Pacote que organiza os endpoints do simulador em módulos separados.
+sim/ — Pacote de módulos do simulador de carteiras.
 
 Módulos:
-  - common:     Helpers, Pydantic models, utilitários compartilhados
-  - fundos:     CRUD de fundos, setup, exclusão, fluxos
-  - carteiras:  CRUD de carteiras, alocação de caixa, portfolios legados
-  - trades:     CRUD de trades, posições por carteira e fundo
-  - pnl:        PnL live/fechamento, cotas, retorno, dashboard
-  - cotistas:   Titulares, corretoras, cotistas, posição diária
-  - resgates:   Solicitações, planos, itens, execução, override MTM
-  - renda_fixa: RF títulos, liquidez por ativo
+  models.py     — Pydantic models (inputs de API)
+  helpers.py    — utilitários de data/hora, entidade, FX e trade
+  caixa.py      — saldo de caixa, validação de capital
+  positions.py  — motor de posições, MtM, posição diária
+  cotas.py      — NAV/cotas, retorno, posição de cotistas
+  pnl.py        — captura live, fechamento, backfill, catch-up
 """

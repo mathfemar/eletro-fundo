@@ -1,30 +1,26 @@
 """
-routers/simulador.py — Endpoints do simulador de carteiras.
+routers/simulador.py — Endpoints (rotas FastAPI) do simulador de carteiras.
 
-Os helpers, models e motor de posições ficam em app.api.routers.sim.common.
-Este arquivo contém apenas os endpoints (rotas FastAPI).
+Toda lógica de negócio vive nos módulos em app.api.routers.sim/:
+  models.py     — Pydantic models
+  helpers.py    — utilitários de data/hora, entidade, FX e trade
+  caixa.py      — saldo de caixa, validação de capital
+  positions.py  — motor de posições, mark-to-market, posição diária
+  cotas.py      — NAV/cotas, retorno, posição de cotistas
+  pnl.py        — captura live, fechamento, backfill, catch-up
 """
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.models.common import APIResponse
 from app.services.db_connection import managed_connection, query, query_scalar
 
-# ── Imports de sim.common (source of truth para helpers e models) ────────────
-from app.api.routers.sim.common import (
-    TZ_BR,
-    _now_sp, _now_sp_str, _iso_date_sp,
-    _get_or_create_legacy_entities, _entity_exists,
-    _normalize_trade_payload, _assert_portfolio_has_capital_for_trade,
-    _saldo_carteira_caixa, _get_fundo_caixa_total_sync,
-    _build_positions_response, _get_fundo_positions_payload_sync,
-    _list_active_fundo_ids,
-    # Pydantic models
+# ── Models ───────────────────────────────────────────────────────────────────
+from app.api.routers.sim.models import (
     PortfolioInput, FundoInput, FundoSetupInput, FundoCarteiraInput,
     FundoAlocacaoInput, TitularInput, CorretoraInput, TradeInput,
     FundoFluxoInput, AtivoLiquidezInput, RFTituloInput,
@@ -32,15 +28,67 @@ from app.api.routers.sim.common import (
     ResgateOverrideInput,
 )
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+from app.api.routers.sim.helpers import (
+    _now_sp, _now_sp_str, _iso_date_sp,
+    _get_or_create_legacy_entities, _entity_exists,
+    _normalize_trade_payload, _list_active_fundo_ids,
+    _normalize_currency, _resolve_fx_asset_ids, _get_fx_rate,
+)
+
+# ── Caixa ────────────────────────────────────────────────────────────────────
+from app.api.routers.sim.caixa import (
+    _saldo_carteira_caixa,
+    _get_fundo_caixa_total_sync,
+    _assert_portfolio_has_capital_for_trade,
+)
+
+# ── Posições ─────────────────────────────────────────────────────────────────
+from app.api.routers.sim.positions import (
+    _build_positions_response,
+    _get_fundo_positions_payload_sync,
+    recompute_carteira_posicao_diaria_sync,
+)
+
+# ── Cotas / NAV ─────────────────────────────────────────────────────────────
+from app.api.routers.sim.cotas import (
+    recompute_fundo_cotas_sync,
+    recompute_cotistas_posicao_diaria_sync,
+    compute_retorno_serie_sync,
+)
+
+# ── PnL ─────────────────────────────────────────────────────────────────────
+from app.api.routers.sim.pnl import (
+    capture_pnl_live_fundo_sync,
+    close_pnl_day_fundo_sync,
+    backfill_pnl_fechamento_fundo_sync,
+    close_pnl_day_all_fundos_sync,
+    catchup_fechamento_all_fundos_sync,
+)
+
 logger = logging.getLogger("app.api.simulador")
 router = APIRouter(prefix="/api/sim", tags=["Simulador"])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS — Os helpers, models e motor de posições ficam em sim.common
+# ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
+
+
+@router.get("/fx-rate", response_model=APIResponse)
+async def get_fx_rate_endpoint(
+    moeda: str = Query(..., description="Moeda do ativo (ex: USD)"),
+    dt: Optional[str] = Query(default=None, description="Data YYYY-MM-DD"),
+):
+    """Retorna a taxa de cambio para a moeda informada na data."""
+    cur = _normalize_currency(moeda)
+    if cur == "BRL":
+        return {"data": {"moeda": cur, "dt": dt, "fx_rate": 1.0}, "total": 1}
+    fx_asset_ids = _resolve_fx_asset_ids({cur})
+    rate = _get_fx_rate(cur, dt, fx_asset_ids, {})
+    return {"data": {"moeda": cur, "dt": dt, "fx_rate": rate}, "total": 1}
 
 
 @router.get("/portfolios", response_model=APIResponse)
@@ -356,6 +404,23 @@ async def criar_fluxo_fundo(payload: FundoFluxoInput):
             raise HTTPException(status_code=404, detail=f"Titular {payload.ID_TITULAR} não encontrado")
 
     try:
+        now_sp = _now_sp_str()
+
+        # Carteira CAIXA do fundo — é a porta de entrada/saída de capital do cotista
+        caixa_carteira_id = query_scalar(
+            """
+            SELECT dc.ID_CARTEIRA
+            FROM RL_FUNDO_CARTEIRA rfc
+            JOIN DIM_CARTEIRA dc ON dc.ID_CARTEIRA = rfc.ID_CARTEIRA
+            WHERE rfc.ID_FUNDO = ?
+              AND UPPER(COALESCE(dc.CONTA_REF, '')) = 'CAIXA'
+            LIMIT 1
+            """,
+            params=(payload.ID_FUNDO,),
+        )
+        # APORTE adiciona caixa; RESGATE retira caixa da carteira CAIXA
+        tp_movimento = "APORTE_COTISTA" if tp_fluxo == "APORTE" else "RESGATE_COTISTA"
+
         with managed_connection() as conn:
             cur = conn.execute(
                 """
@@ -376,13 +441,36 @@ async def criar_fluxo_fundo(payload: FundoFluxoInput):
                     tp_fluxo,
                     float(payload.VL_FLUXO),
                     payload.OBSERVACAO,
-                    _now_sp_str(),
+                    now_sp,
                 ),
             )
             fluxo_id = cur.lastrowid
 
+            # Movimento espelho na carteira CAIXA (mesmo transaction)
+            # Nota: setup_fundo cria APORTE_INICIAL separadamente — este endpoint
+            # só é chamado para fluxos pós-setup, portanto não há duplicação.
+            if caixa_carteira_id:
+                conn.execute(
+                    """
+                    INSERT INTO FAT_CARTEIRA_MOVIMENTO_CAIXA (
+                        ID_FUNDO, ID_CARTEIRA, ID_CARTEIRA_REF,
+                        DT_MOVIMENTO, TP_MOVIMENTO, VL_MOVIMENTO, DS_OBSERVACAO, DT_CARGA
+                    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        payload.ID_FUNDO,
+                        int(caixa_carteira_id),
+                        payload.DT_REFERENCIA,
+                        tp_movimento,
+                        float(payload.VL_FLUXO),
+                        f"Fluxo #{fluxo_id}",
+                        now_sp,
+                    ),
+                )
+
         cota_info = recompute_fundo_cotas_sync(payload.ID_FUNDO)
         return APIResponse(data={"ID_FLUXO": fluxo_id, "ID_FUNDO": payload.ID_FUNDO, "COTA": cota_info})
+
     except Exception as exc:
         logger.exception("Erro em POST /sim/fundos/fluxos")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -692,7 +780,29 @@ async def listar_carteiras_fundo(fundo_id: int):
         items = df.to_dict("records")
         for item in items:
             carteira_id = int(item["ID_CARTEIRA"])
-            item["VL_SALDO_CAIXA"] = _saldo_carteira_caixa(fundo_id, carteira_id)
+
+            # Saldo de movimentos (alocações, aportes, etc.)
+            saldo_mov = _saldo_carteira_caixa(fundo_id, carteira_id)
+
+            # Impacto líquido de trades sobre o caixa da carteira:
+            #   SELL → devolve caixa   (+)
+            #   BUY  → consome caixa   (-)
+            saldo_trades_row = query_scalar(
+                """
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN SIDE = 'SELL' THEN (QTD * PU) - COALESCE(CUSTO, 0)
+                        WHEN SIDE = 'BUY'  THEN -((QTD * PU) + COALESCE(CUSTO, 0))
+                        ELSE 0
+                    END
+                ), 0)
+                FROM FAT_CARTEIRA_TRADE
+                WHERE ID_CARTEIRA = ?
+                """,
+                params=(carteira_id,),
+            )
+            item["VL_SALDO_CAIXA"] = saldo_mov + float(saldo_trades_row or 0)
+
             
             # Busca todos os trades da carteira para calcular a posição e PnL abertos
             trades_df = query(
@@ -1346,90 +1456,6 @@ async def get_positions(
         logger.exception("Erro em GET /sim/positions")
         raise HTTPException(status_code=500, detail=str(exc))
 
-
-def recompute_carteira_posicao_diaria_sync(portfolio_id: int, dt_ref: Optional[str] = None) -> dict:
-    dt_base = dt_ref or _iso_date_sp()
-    trades_df = query(
-        """
-        SELECT
-            t.ID_ATIVO,
-            da.CD_ATIVO,
-            da.MOEDA,
-            COALESCE(t.DT_HORA_EXEC, t.DT_TRADE || ' 00:00:00') AS DT_HORA_EXEC,
-            t.SIDE,
-            t.QTD,
-            t.PU,
-            COALESCE(t.CUSTO, 0) AS CUSTO
-        FROM FAT_CARTEIRA_TRADE t
-        JOIN DIM_ATIVO da ON da.ID_ATIVO = t.ID_ATIVO
-        WHERE t.ID_CARTEIRA = ?
-          AND substr(COALESCE(t.DT_HORA_EXEC, t.DT_TRADE || ' 00:00:00'), 1, 10) <= ?
-        ORDER BY DT_HORA_EXEC ASC, t.ID_TRADE ASC
-        """,
-        params=(portfolio_id, dt_base),
-    )
-
-    payload = _build_positions_response(
-        trades_records=trades_df.to_dict("records"),
-        owner_key="ID_PORTFOLIO",
-        owner_id=portfolio_id,
-        dt_mark_to_market=dt_base,
-    )
-    items = payload.get("items", [])
-
-    with managed_connection() as conn:
-        conn.execute(
-            "DELETE FROM FAT_CARTEIRA_POSICAO_DIARIA WHERE ID_CARTEIRA = ? AND DT_REFERENCIA = ?",
-            (portfolio_id, dt_base),
-        )
-        for item in items:
-            conn.execute(
-                """
-                INSERT INTO FAT_CARTEIRA_POSICAO_DIARIA (
-                    ID_CARTEIRA,
-                    DT_REFERENCIA,
-                    ID_ATIVO,
-                    CD_ATIVO,
-                    MOEDA,
-                    FX_ATUAL,
-                    QTD_LIQ,
-                    PRECO_MEDIO,
-                    PRECO_ATUAL,
-                    CUSTO_TOTAL,
-                    VALOR_MERCADO,
-                    PNL_REALIZADO,
-                    PNL_ABERTO,
-                    PNL_TOTAL,
-                    DT_CARGA
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    portfolio_id,
-                    dt_base,
-                    int(item["ID_ATIVO"]),
-                    item["CD_ATIVO"],
-                    item.get("MOEDA"),
-                    float(item.get("FX_ATUAL") or 1.0),
-                    float(item.get("QTD_LIQ") or 0.0),
-                    item.get("PRECO_MEDIO"),
-                    item.get("PRECO_ATUAL"),
-                    item.get("CUSTO_TOTAL"),
-                    item.get("VALOR_MERCADO"),
-                    item.get("PNL_REALIZADO"),
-                    item.get("PNL_ABERTO"),
-                    item.get("PNL_TOTAL"),
-                    _now_sp_str(),
-                ),
-            )
-
-    return {
-        "ID_PORTFOLIO": portfolio_id,
-        "DT_REFERENCIA": dt_base,
-        "TOTAL_ATIVOS": len(items),
-        "RESUMO": payload.get("resumo", {}),
-    }
-
-
 @router.get("/carteiras/posicao/serie", response_model=APIResponse)
 async def get_carteira_posicao_serie(
     portfolio_id: int = Query(..., description="ID da carteira"),
@@ -1519,601 +1545,6 @@ async def get_positions_fundo(
     except Exception as exc:
         logger.exception("Erro em GET /sim/fundos/positions")
         raise HTTPException(status_code=500, detail=str(exc))
-
-
-
-
-
-
-
-
-def capture_pnl_live_fundo_sync(fundo_id: int, dt_hora_captura: Optional[datetime] = None, fonte: str = "simulador") -> dict:
-    dt_cap = dt_hora_captura or _now_sp()
-    dt_ref = dt_cap.date().isoformat()
-    dt_carga = _now_sp_str()
-
-    payload = _get_fundo_positions_payload_sync(fundo_id=fundo_id, dt_ref=dt_ref)
-    resumo = payload.get("resumo", {})
-
-    # PL total = valor de mercado das posições abertas + caixa líquido
-    valor_mercado_posicoes = float(resumo.get("VALOR_MERCADO_TOTAL") or 0.0)
-    caixa_liquido = _get_fundo_caixa_total_sync(fundo_id, dt_ref)
-    pl_total_fundo = valor_mercado_posicoes + caixa_liquido
-
-    with managed_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO FAT_FUNDO_PNL_LIVE (
-                ID_FUNDO,
-                DT_REFERENCIA,
-                DT_HORA_CAPTURA,
-                VL_VALOR_MERCADO_TOTAL,
-                VL_PNL_ABERTO_TOTAL,
-                VL_PNL_REALIZADO_TOTAL,
-                VL_PNL_TOTAL,
-                CD_FONTE,
-                FL_REPROCESSADO,
-                DT_CARGA
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                fundo_id,
-                dt_ref,
-                dt_cap.strftime("%Y-%m-%d %H:%M:%S"),
-                pl_total_fundo,
-                float(resumo.get("PNL_ABERTO_TOTAL") or 0.0),
-                float(resumo.get("PNL_REALIZADO_TOTAL") or 0.0),
-                float(resumo.get("PNL_TOTAL") or 0.0),
-                fonte,
-                0,
-                dt_carga,
-            ),
-        )
-
-    return {
-        "ID_FUNDO": fundo_id,
-        "DT_REFERENCIA": dt_ref,
-        "DT_HORA_CAPTURA": dt_cap.strftime("%Y-%m-%d %H:%M:%S"),
-        "RESUMO": resumo,
-    }
-
-
-def recompute_fundo_cotas_sync(fundo_id: int) -> dict:
-    dt_primeiro_capital = query_scalar(
-        """
-        SELECT MIN(DT_REFERENCIA)
-        FROM FAT_FUNDO_FLUXO_CAPITAL
-        WHERE ID_FUNDO = ?
-        """,
-        params=(fundo_id,),
-    )
-    if not dt_primeiro_capital:
-        with managed_connection() as conn:
-            conn.execute("DELETE FROM FAT_FUNDO_COTA_DIARIA WHERE ID_FUNDO = ?", (fundo_id,))
-        return {"ID_FUNDO": fundo_id, "QT_DIAS": 0}
-
-    # Limpar qualquer lixo gerado antes da data do primeiro aporte
-    with managed_connection() as conn:
-        conn.execute(
-            "DELETE FROM FAT_FUNDO_COTA_DIARIA WHERE ID_FUNDO = ? AND DT_REFERENCIA < ?",
-            (fundo_id, dt_primeiro_capital)
-        )
-
-    fechamento_df = query(
-        """
-        SELECT
-            DT_REFERENCIA,
-            DT_HORA_CAPTURA,
-            COALESCE(VL_VALOR_MERCADO_TOTAL, 0) AS VL_PL
-        FROM FAT_FUNDO_PNL_FECHAMENTO
-        WHERE ID_FUNDO = ?
-          AND DT_REFERENCIA >= ?
-        ORDER BY DT_REFERENCIA
-        """,
-        params=(fundo_id, dt_primeiro_capital),
-    )
-
-    fluxo_df = query(
-        """
-        SELECT
-            DT_REFERENCIA,
-            SUM(CASE WHEN TP_FLUXO = 'APORTE' THEN VL_FLUXO ELSE -VL_FLUXO END) AS VL_FLUXO_LIQ
-        FROM FAT_FUNDO_FLUXO_CAPITAL
-        WHERE ID_FUNDO = ?
-          AND DT_REFERENCIA >= ?
-          AND COALESCE(OBSERVACAO, '') <> 'SEED_INICIAL_SETUP'
-        GROUP BY DT_REFERENCIA
-        """,
-        params=(fundo_id, dt_primeiro_capital),
-    )
-
-    fechamento_records = fechamento_df.to_dict("records")
-    fluxo_records = fluxo_df.to_dict("records")
-
-    if not fechamento_records and not fluxo_records:
-        return {"ID_FUNDO": fundo_id, "QT_DIAS": 0}
-
-    fechamento_map: dict[str, dict] = {
-        str(row["DT_REFERENCIA"]): {
-            "VL_PL": float(row["VL_PL"] or 0.0),
-            "DT_HORA_CAPTURA": row["DT_HORA_CAPTURA"],
-        }
-        for row in fechamento_records
-    }
-    fluxo_map = {
-        str(row["DT_REFERENCIA"]): float(row["VL_FLUXO_LIQ"] or 0.0)
-        for row in fluxo_records
-    }
-
-    datas = sorted(set(fechamento_map.keys()) | set(fluxo_map.keys()))
-    if not datas:
-        return {"ID_FUNDO": fundo_id, "QT_DIAS": 0}
-
-    dt_primeiro = datas[0]
-    pl_primeiro_fechamento = float((fechamento_map.get(dt_primeiro) or {}).get("VL_PL") or 0.0)
-    pl_primeira_abertura = query_scalar(
-        """
-        SELECT COALESCE(VL_VALOR_MERCADO_TOTAL, 0)
-        FROM FAT_FUNDO_PNL_LIVE
-        WHERE ID_FUNDO = ?
-          AND DT_REFERENCIA = ?
-        ORDER BY DT_HORA_CAPTURA ASC
-        LIMIT 1
-        """,
-        params=(fundo_id, dt_primeiro),
-    )
-
-    pl_base_cotas = float(pl_primeira_abertura or 0.0)
-    if abs(pl_base_cotas) <= 1e-12:
-        pl_base_cotas = pl_primeiro_fechamento
-    if abs(pl_base_cotas) <= 1e-12:
-        pl_base_cotas = 1.0
-
-    qt_cotas_atual = pl_base_cotas
-    cota_prev = pl_base_cotas / qt_cotas_atual if abs(qt_cotas_atual) > 1e-12 else 1.0
-    pl_economico_atual = pl_base_cotas
-    pl_fechamento_anterior: Optional[float] = None
-
-    with managed_connection() as conn:
-        dt_carga = _now_sp_str()
-        for dt_ref in datas:
-            fechamento = fechamento_map.get(dt_ref)
-            fluxo_liq = float(fluxo_map.get(dt_ref, 0.0))
-
-            if fechamento is not None:
-                pl_fech = float(fechamento["VL_PL"] or 0.0)
-                if pl_fechamento_anterior is None:
-                    pl_economico_atual = pl_fech
-                else:
-                    pl_economico_atual += pl_fech - pl_fechamento_anterior
-                pl_fechamento_anterior = pl_fech
-
-            if abs(fluxo_liq) > 1e-12 and abs(cota_prev) > 1e-12:
-                qt_cotas_atual += fluxo_liq / cota_prev
-                pl_economico_atual += fluxo_liq
-
-            cota = pl_economico_atual / qt_cotas_atual if abs(qt_cotas_atual) > 1e-12 else 0.0
-            dt_hora_fechamento = (
-                (fechamento or {}).get("DT_HORA_CAPTURA")
-                or f"{dt_ref} 19:00:00"
-            )
-
-            conn.execute(
-                """
-                INSERT INTO FAT_FUNDO_COTA_DIARIA (
-                    ID_FUNDO,
-                    DT_REFERENCIA,
-                    VL_COTA,
-                    QT_COTAS,
-                    VL_PL,
-                    DT_HORA_FECHAMENTO,
-                    CD_METODO,
-                    FL_REPROCESSADO,
-                    DT_CARGA
-                ) VALUES (?, ?, ?, ?, ?, ?, 'nav_com_fluxos_emit_burn', 0, ?)
-                ON CONFLICT(ID_FUNDO, DT_REFERENCIA) DO UPDATE SET
-                    VL_COTA = excluded.VL_COTA,
-                    QT_COTAS = excluded.QT_COTAS,
-                    VL_PL = excluded.VL_PL,
-                    DT_HORA_FECHAMENTO = excluded.DT_HORA_FECHAMENTO,
-                    CD_METODO = excluded.CD_METODO,
-                    FL_REPROCESSADO = 1,
-                    DT_CARGA = datetime('now', '-3 hours')
-                """,
-                (
-                    fundo_id,
-                    dt_ref,
-                    cota,
-                    qt_cotas_atual,
-                    pl_economico_atual,
-                    dt_hora_fechamento,
-                    dt_carga,
-                ),
-            )
-
-            cota_prev = cota if abs(cota) > 1e-12 else cota_prev
-
-    result = {
-        "ID_FUNDO": fundo_id,
-        "QT_DIAS": len(datas),
-        "QT_COTAS": qt_cotas_atual,
-        "VL_PL_BASE_COTAS": pl_base_cotas,
-        "DT_BASE_COTAS": dt_primeiro,
-        "VL_COTA_ULTIMA": cota_prev,
-    }
-    recompute_cotistas_posicao_diaria_sync(fundo_id=fundo_id)
-    return result
-
-
-def _compute_cotistas_posicao_snapshot(fundo_id: int, dt_base: str) -> tuple[list[dict], float]:
-    cota_ref = query_scalar(
-        """
-        SELECT VL_COTA
-        FROM FAT_FUNDO_COTA_DIARIA
-        WHERE ID_FUNDO = ? AND DT_REFERENCIA = ?
-        LIMIT 1
-        """,
-        params=(fundo_id, dt_base),
-    )
-    if cota_ref is None:
-        cota_ref = query_scalar(
-            """
-            SELECT VL_COTA
-            FROM FAT_FUNDO_COTA_DIARIA
-            WHERE ID_FUNDO = ? AND DT_REFERENCIA <= ?
-            ORDER BY DT_REFERENCIA DESC
-            LIMIT 1
-            """,
-            params=(fundo_id, dt_base),
-        )
-    cota_atual = float(cota_ref or 0.0)
-    if cota_ref is None:
-        return [], cota_atual
-
-    flows_df = query(
-        """
-        SELECT
-            ffc.ID_TITULAR,
-            dt.NM_TITULAR,
-            ffc.DT_REFERENCIA,
-            ffc.TP_FLUXO,
-            ffc.VL_FLUXO
-        FROM FAT_FUNDO_FLUXO_CAPITAL ffc
-        LEFT JOIN DIM_TITULAR dt ON dt.ID_TITULAR = ffc.ID_TITULAR
-        WHERE ffc.ID_FUNDO = ?
-          AND ffc.ID_TITULAR IS NOT NULL
-          AND ffc.DT_REFERENCIA <= ?
-        ORDER BY ffc.DT_REFERENCIA ASC, ffc.ID_FLUXO ASC
-        """,
-        params=(fundo_id, dt_base),
-    )
-
-    cota_hist_df = query(
-        """
-        SELECT DT_REFERENCIA, VL_COTA
-        FROM FAT_FUNDO_COTA_DIARIA
-        WHERE ID_FUNDO = ?
-          AND DT_REFERENCIA <= ?
-        ORDER BY DT_REFERENCIA ASC
-        """,
-        params=(fundo_id, dt_base),
-    )
-    cota_hist = [(str(r["DT_REFERENCIA"]), float(r["VL_COTA"] or 0.0)) for r in cota_hist_df.to_dict("records")]
-
-    def _cota_no_dia(dt_ref: str) -> float:
-        last = None
-        for d, c in cota_hist:
-            if d <= dt_ref:
-                last = c
-            else:
-                break
-        if last is None or abs(last) <= 1e-12:
-            return 1.0
-        return last
-
-    saldo: dict[int, dict] = {}
-    for row in flows_df.to_dict("records"):
-        titular_id = int(row["ID_TITULAR"])
-        item = saldo.setdefault(
-            titular_id,
-            {
-                "ID_FUNDO": fundo_id,
-                "ID_TITULAR": titular_id,
-                "NM_TITULAR": row.get("NM_TITULAR") or f"Titular {titular_id}",
-                "VL_APORTADO_BRUTO": 0.0,
-                "VL_RESGATADO_BRUTO": 0.0,
-                "VL_INVERTIDO_LIQ": 0.0,
-                "QT_COTAS": 0.0,
-                "DT_REFERENCIA": dt_base,
-            },
-        )
-
-        dt_flow = str(row["DT_REFERENCIA"])
-        tp = str(row["TP_FLUXO"]).upper()
-        vl = float(row["VL_FLUXO"] or 0.0)
-        cota_flow = _cota_no_dia(dt_flow)
-        delta_vl = vl if tp == "APORTE" else -vl
-        delta_qt = delta_vl / cota_flow if abs(cota_flow) > 1e-12 else 0.0
-
-        if tp == "APORTE":
-            item["VL_APORTADO_BRUTO"] += vl
-        else:
-            item["VL_RESGATADO_BRUTO"] += vl
-
-        item["VL_INVERTIDO_LIQ"] += delta_vl
-        item["QT_COTAS"] += delta_qt
-
-    items: list[dict] = []
-    for rec in saldo.values():
-        vl_pl_cotista = rec["QT_COTAS"] * cota_atual
-        vl_pnl = vl_pl_cotista - rec["VL_INVERTIDO_LIQ"]
-        items.append(
-            {
-                **rec,
-                "VL_COTA": cota_atual,
-                "VL_PL_COTISTA": vl_pl_cotista,
-                "VL_PNL_COTISTA": vl_pnl,
-            }
-        )
-
-    items.sort(key=lambda x: x["NM_TITULAR"])
-    return items, cota_atual
-
-
-def recompute_cotistas_posicao_diaria_sync(fundo_id: int, dt_referencia: Optional[str] = None) -> dict:
-    if dt_referencia:
-        datas = [dt_referencia]
-    else:
-        cota_dates_df = query(
-            """
-            SELECT DT_REFERENCIA
-            FROM FAT_FUNDO_COTA_DIARIA
-            WHERE ID_FUNDO = ?
-            ORDER BY DT_REFERENCIA
-            """,
-            params=(fundo_id,),
-        )
-        datas = [str(r["DT_REFERENCIA"]) for r in cota_dates_df.to_dict("records")]
-
-    total_rows = 0
-    with managed_connection() as conn:
-        for dt_base in datas:
-            items, _ = _compute_cotistas_posicao_snapshot(fundo_id=fundo_id, dt_base=dt_base)
-            conn.execute(
-                "DELETE FROM FAT_COTISTA_POSICAO_DIARIA WHERE ID_FUNDO = ? AND DT_REFERENCIA = ?",
-                (fundo_id, dt_base),
-            )
-            for item in items:
-                conn.execute(
-                    """
-                    INSERT INTO FAT_COTISTA_POSICAO_DIARIA (
-                        ID_FUNDO,
-                        ID_TITULAR,
-                        DT_REFERENCIA,
-                        NM_TITULAR,
-                        VL_COTA,
-                        VL_APORTADO_BRUTO,
-                        VL_RESGATADO_BRUTO,
-                        VL_INVERTIDO_LIQ,
-                        QT_COTAS,
-                        VL_PL_COTISTA,
-                        VL_PNL_COTISTA,
-                        DT_CARGA
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        fundo_id,
-                        int(item["ID_TITULAR"]),
-                        dt_base,
-                        item.get("NM_TITULAR"),
-                        float(item.get("VL_COTA") or 0.0),
-                        float(item.get("VL_APORTADO_BRUTO") or 0.0),
-                        float(item.get("VL_RESGATADO_BRUTO") or 0.0),
-                        float(item.get("VL_INVERTIDO_LIQ") or 0.0),
-                        float(item.get("QT_COTAS") or 0.0),
-                        float(item.get("VL_PL_COTISTA") or 0.0),
-                        float(item.get("VL_PNL_COTISTA") or 0.0),
-                        _now_sp_str(),
-                    ),
-                )
-                total_rows += 1
-
-    return {"ID_FUNDO": fundo_id, "QT_DIAS": len(datas), "QT_ROWS": total_rows}
-
-
-def close_pnl_day_fundo_sync(
-    fundo_id: int,
-    dt_referencia: str,
-    allow_recompute: bool = True,
-    update_cota: bool = True,
-) -> dict:
-    row = query_scalar(
-        """
-        SELECT COUNT(*)
-        FROM VW_FUNDO_PNL_LIVE_ULTIMO_DIA
-        WHERE ID_FUNDO = ? AND DT_REFERENCIA = ?
-        """,
-        params=(fundo_id, dt_referencia),
-    )
-
-    if allow_recompute or not row:
-        capture_time = datetime.fromisoformat(f"{dt_referencia} 19:00:00").replace(tzinfo=TZ_BR)
-        capture_pnl_live_fundo_sync(
-            fundo_id=fundo_id,
-            dt_hora_captura=capture_time,
-            fonte="reprocessamento_fechamento",
-        )
-
-    last_df = query(
-        """
-        SELECT
-            ID_FUNDO,
-            DT_REFERENCIA,
-            DT_HORA_CAPTURA,
-            VL_VALOR_MERCADO_TOTAL,
-            VL_PNL_ABERTO_TOTAL,
-            VL_PNL_REALIZADO_TOTAL,
-            VL_PNL_TOTAL
-        FROM VW_FUNDO_PNL_LIVE_ULTIMO_DIA
-        WHERE ID_FUNDO = ?
-          AND DT_REFERENCIA = ?
-        LIMIT 1
-        """,
-        params=(fundo_id, dt_referencia),
-    )
-
-    if last_df.empty:
-        raise ValueError(f"Sem snapshot live para fechar fundo={fundo_id} em {dt_referencia}")
-
-    rec = last_df.to_dict("records")[0]
-    dt_carga = _now_sp_str()
-    with managed_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO FAT_FUNDO_PNL_FECHAMENTO (
-                ID_FUNDO,
-                DT_REFERENCIA,
-                DT_HORA_CAPTURA,
-                VL_VALOR_MERCADO_TOTAL,
-                VL_PNL_ABERTO_TOTAL,
-                VL_PNL_REALIZADO_TOTAL,
-                VL_PNL_TOTAL,
-                CD_METODO,
-                FL_REPROCESSADO,
-                DT_CARGA
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'snapshot_ultimo_dia', 0, ?)
-            ON CONFLICT(ID_FUNDO, DT_REFERENCIA) DO UPDATE SET
-                DT_HORA_CAPTURA = excluded.DT_HORA_CAPTURA,
-                VL_VALOR_MERCADO_TOTAL = excluded.VL_VALOR_MERCADO_TOTAL,
-                VL_PNL_ABERTO_TOTAL = excluded.VL_PNL_ABERTO_TOTAL,
-                VL_PNL_REALIZADO_TOTAL = excluded.VL_PNL_REALIZADO_TOTAL,
-                VL_PNL_TOTAL = excluded.VL_PNL_TOTAL,
-                CD_METODO = excluded.CD_METODO,
-                FL_REPROCESSADO = 1,
-                DT_CARGA = datetime('now', '-3 hours')
-            """,
-            (
-                fundo_id,
-                dt_referencia,
-                rec["DT_HORA_CAPTURA"],
-                float(rec["VL_VALOR_MERCADO_TOTAL"] or 0.0),
-                float(rec["VL_PNL_ABERTO_TOTAL"] or 0.0),
-                float(rec["VL_PNL_REALIZADO_TOTAL"] or 0.0),
-                float(rec["VL_PNL_TOTAL"] or 0.0),
-                dt_carga,
-            ),
-        )
-
-    if update_cota:
-        recompute_fundo_cotas_sync(fundo_id)
-
-    return {
-        "ID_FUNDO": fundo_id,
-        "DT_REFERENCIA": dt_referencia,
-        "VL_PNL_TOTAL": float(rec["VL_PNL_TOTAL"] or 0.0),
-        "DT_HORA_CAPTURA": rec["DT_HORA_CAPTURA"],
-    }
-
-
-def backfill_pnl_fechamento_fundo_sync(fundo_id: int, dt_inicio: str, dt_fim: str) -> dict:
-    start = date.fromisoformat(dt_inicio)
-    end = date.fromisoformat(dt_fim)
-    if end < start:
-        raise ValueError("dt_fim deve ser maior ou igual a dt_inicio")
-
-    # Não processar dias anteriores ao primeiro capital do fundo.
-    # Um fundo sem capital não tem PL real — gerar fechamentos com PL=0 antes
-    # do aporte inicial distorce o cálculo de cotas (qt_cotas fica em 1.0 e
-    # quando o PL pula de 0 para o valor real, a cota explode).
-    dt_primeiro_capital = query_scalar(
-        """
-        SELECT MIN(DT_REFERENCIA)
-        FROM FAT_FUNDO_FLUXO_CAPITAL
-        WHERE ID_FUNDO = ?
-        """,
-        params=(fundo_id,),
-    )
-    if dt_primeiro_capital is None:
-        raise ValueError(
-            f"Fundo {fundo_id} não possui nenhum aporte/capital registrado. "
-            "Registre o capital inicial antes de executar o backfill."
-        )
-
-    dt_capital = date.fromisoformat(str(dt_primeiro_capital))
-    if start < dt_capital:
-        start = dt_capital  # nunca processar antes do primeiro aporte
-
-    if start > end:
-        raise ValueError(
-            f"dt_inicio ({dt_inicio}) é anterior ao primeiro capital do fundo "
-            f"({dt_capital}) e dt_fim ({dt_fim}) também — nada a processar."
-        )
-
-    registros = 0
-    cursor = start
-    while cursor <= end:
-        close_pnl_day_fundo_sync(
-            fundo_id=fundo_id,
-            dt_referencia=cursor.isoformat(),
-            allow_recompute=True,
-            update_cota=False,
-        )
-        registros += 1
-        cursor += timedelta(days=1)
-
-    cota_info = recompute_fundo_cotas_sync(fundo_id)
-
-    return {
-        "ID_FUNDO": fundo_id,
-        "DT_INICIO": start.isoformat(),  # data efetiva usada (pode ter sido ajustada)
-        "DT_FIM": dt_fim,
-        "QT_DIAS": registros,
-        "COTA": cota_info,
-    }
-
-
-def close_pnl_day_all_fundos_sync(dt_referencia: str) -> dict:
-    fundo_ids = _list_active_fundo_ids()
-    ok = 0
-    erro = 0
-    for fid in fundo_ids:
-        try:
-            close_pnl_day_fundo_sync(fundo_id=fid, dt_referencia=dt_referencia, allow_recompute=True)
-            ok += 1
-        except Exception:
-            erro += 1
-            logger.exception("Falha no fechamento diário do fundo %s em %s", fid, dt_referencia)
-    return {"DT_REFERENCIA": dt_referencia, "QT_OK": ok, "QT_ERRO": erro}
-
-
-def catchup_fechamento_all_fundos_sync() -> dict:
-    last_dt = query_scalar("SELECT MAX(DT_REFERENCIA) FROM FAT_FUNDO_PNL_FECHAMENTO")
-    today = _now_sp().date()
-
-    start = date.fromisoformat(last_dt) + timedelta(days=1) if last_dt else today - timedelta(days=7)
-    end = today
-    if end < start:
-        return {"DT_INICIO": start.isoformat(), "DT_FIM": end.isoformat(), "QT_DIAS": 0, "QT_OK": 0, "QT_ERRO": 0}
-
-    qt_dias = 0
-    ok = 0
-    erro = 0
-    cursor = start
-    while cursor <= end:
-        qt_dias += 1
-        result = close_pnl_day_all_fundos_sync(cursor.isoformat())
-        ok += int(result["QT_OK"])
-        erro += int(result["QT_ERRO"])
-        cursor += timedelta(days=1)
-
-    return {
-        "DT_INICIO": start.isoformat(),
-        "DT_FIM": end.isoformat(),
-        "QT_DIAS": qt_dias,
-        "QT_OK": ok,
-        "QT_ERRO": erro,
-    }
-
 
 @router.post("/fundos/pnl/live/capture", response_model=APIResponse)
 async def capture_pnl_live(
@@ -2274,56 +1705,6 @@ async def serie_retorno_fundo(
     except Exception as exc:
         logger.exception("Erro em GET /sim/fundos/retorno")
         raise HTTPException(status_code=500, detail=str(exc))
-
-
-def compute_retorno_serie_sync(
-    fundo_id: int,
-    dt_inicio: Optional[str] = None,
-    dt_fim: Optional[str] = None,
-) -> dict:
-    """Lê FAT_FUNDO_COTA_DIARIA e calcula retorno diário + acumulado."""
-    filtros = ["ID_FUNDO = ?"]
-    params: list = [fundo_id]
-    if dt_inicio:
-        filtros.append("DT_REFERENCIA >= ?")
-        params.append(dt_inicio)
-    if dt_fim:
-        filtros.append("DT_REFERENCIA <= ?")
-        params.append(dt_fim)
-
-    where = " AND ".join(filtros)
-    df = query(
-        f"""
-        SELECT DT_REFERENCIA, VL_COTA
-        FROM FAT_FUNDO_COTA_DIARIA
-        WHERE {where}
-        ORDER BY DT_REFERENCIA
-        """,
-        params=tuple(params),
-    )
-
-    records = df.to_dict("records")
-    if not records:
-        return {"items": [], "total": 0}
-
-    cota_base = float(records[0]["VL_COTA"] or 0.0)
-    items: list[dict] = []
-    cota_anterior = cota_base
-
-    for row in records:
-        cota = float(row["VL_COTA"] or 0.0)
-        retorno_dia = (cota / cota_anterior - 1) if abs(cota_anterior) > 1e-12 else 0.0
-        retorno_acum = (cota / cota_base - 1) if abs(cota_base) > 1e-12 else 0.0
-        items.append({
-            "DT_REFERENCIA": row["DT_REFERENCIA"],
-            "VL_COTA": cota,
-            "RETORNO_DIA_PCT": round(retorno_dia * 100, 6),
-            "RETORNO_ACUM_PCT": round(retorno_acum * 100, 6),
-        })
-        cota_anterior = cota if abs(cota) > 1e-12 else cota_anterior
-
-    return {"items": items, "total": len(items)}
-
 
 @router.get("/fundos/fluxos", response_model=APIResponse)
 async def listar_fluxos_fundo(
@@ -2521,6 +1902,7 @@ async def dashboard_fundo_consolidado(
 
         last_pnl = pnl_items[-1] if pnl_items else None
         last_cota = cota_items[-1] if cota_items else None
+        vl_caixa_real = _get_fundo_caixa_total_sync(fundo_id)
 
         return APIResponse(
             data={
@@ -2532,6 +1914,7 @@ async def dashboard_fundo_consolidado(
                     "VL_PL_ULTIMO": float(last_pnl.get("VL_VALOR_MERCADO_TOTAL") or 0.0) if last_pnl else 0.0,
                     "VL_PNL_ULTIMO": float(last_pnl.get("VL_PNL_TOTAL") or 0.0) if last_pnl else 0.0,
                     "VL_COTA_ULTIMA": float(last_cota.get("VL_COTA") or 0.0) if last_cota else 0.0,
+                    "VL_CAIXA_REAL": vl_caixa_real,
                 },
                 "pnl_fechamento": {"items": pnl_items, "total": len(pnl_items)},
                 "cotas": {"items": cota_items, "total": len(cota_items)},
@@ -2544,6 +1927,7 @@ async def dashboard_fundo_consolidado(
                 },
             }
         )
+
     except HTTPException:
         raise
     except Exception as exc:

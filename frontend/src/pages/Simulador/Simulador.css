@@ -210,3 +210,29 @@
 .sim-chart-card {
     padding-bottom: 0.5rem;
 }
+
+/* ── Alertas de precificação (Posições) ───────────────────────────── */
+
+.alerta-preco {
+    color: #f0ad4e;
+    margin-left: 0.4rem;
+    font-size: 0.75rem;
+    cursor: help;
+}
+
+.badge-pm {
+    display: inline-block;
+    background: rgba(240, 173, 78, 0.18);
+    color: #f0ad4e;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+    letter-spacing: 0.03em;
+}
+
+tr.row-alerta {
+    background: rgba(240, 173, 78, 0.04);
+}

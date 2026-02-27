@@ -45,6 +45,7 @@ import {
     postSimResgateOverridePlano,
     getSimResgateEventosPlano,
     getSimFundRetorno,
+    getSimFxRate,
     type SimPortfolioInput,
     type SimFundoInput,
     type SimFundoSetupInput,
@@ -608,5 +609,14 @@ export function useSimFundRetorno(fundoId: number | null, dtInicio?: string, dtF
         queryFn: () => getSimFundRetorno(fundoId!, dtInicio, dtFim),
         enabled: !!fundoId,
         staleTime: STALE,
+    });
+}
+
+export function useSimFxRate(moeda: string | null, dt: string | null) {
+    return useQuery({
+        queryKey: ['sim', 'fx-rate', moeda, dt],
+        queryFn: () => getSimFxRate(moeda!, dt!),
+        enabled: !!moeda && moeda !== 'BRL' && !!dt,
+        staleTime: 60 * 1000, // 1 min
     });
 }

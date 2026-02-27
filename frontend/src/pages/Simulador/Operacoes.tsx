@@ -9,6 +9,7 @@ import {
     useSimTrades,
     useSimFundFluxos,
     useSimFundCotaSerie,
+    useSimFxRate,
 } from '@/hooks/useSimulador';
 import { formatNumero } from '@/utils/formatBR';
 import './Simulador.css';
@@ -100,14 +101,6 @@ export default function SimuladorOperacoes() {
         return Number(row.VL_SALDO_CAIXA ?? 0);
     }, [carteirasFundoQuery.data, portfolioId]);
 
-    const valorEstimadoOrdem = useMemo(() => {
-        const q = Number(qtd);
-        const p = Number(pu);
-        const c = Number(custo || 0);
-        if (!Number.isFinite(q) || !Number.isFinite(p) || !Number.isFinite(c)) return 0;
-        return q * p + c;
-    }, [qtd, pu, custo]);
-
     const ativosUnicos = useMemo(() => {
         if (!ativos) return [];
         const map = new Map<number, (typeof ativos)[number]>();
@@ -116,6 +109,26 @@ export default function SimuladorOperacoes() {
         }
         return Array.from(map.values());
     }, [ativos]);
+
+    const ativoSelecionado = useMemo(
+        () => ativosUnicos.find(a => a.ID_ATIVO === idAtivo) ?? null,
+        [ativosUnicos, idAtivo],
+    );
+    const moedaAtivo = ativoSelecionado?.MOEDA ?? null;
+
+    const fxQuery = useSimFxRate(
+        moedaAtivo && moedaAtivo !== 'BRL' ? moedaAtivo : null,
+        dtHoraExec ? dtHoraExec.slice(0, 10) : dtTrade,
+    );
+    const fxRate = !moedaAtivo || moedaAtivo === 'BRL' ? 1 : (fxQuery.data?.fx_rate ?? 1);
+
+    const valorEstimadoOrdem = useMemo(() => {
+        const q = Number(qtd);
+        const p = Number(pu);
+        const c = Number(custo || 0);
+        if (!Number.isFinite(q) || !Number.isFinite(p) || !Number.isFinite(c)) return 0;
+        return (q * p + c) * fxRate;
+    }, [qtd, pu, custo, fxRate]);
 
     const carteirasOperaveis = useMemo(
         () =>
@@ -297,7 +310,7 @@ export default function SimuladorOperacoes() {
                             ? 'Carregando caixa disponível da carteira…'
                             : caixaDisponivelCarteira == null
                                 ? 'Caixa disponível: não identificado para a carteira selecionada.'
-                                : `Caixa disponível: ${formatNumero(caixaDisponivelCarteira, 2)} • Valor estimado da ordem: ${formatNumero(valorEstimadoOrdem, 2)}`}
+                                : `Caixa disponível: ${formatNumero(caixaDisponivelCarteira, 2)} • Valor estimado da ordem: R$ ${formatNumero(valorEstimadoOrdem, 2)}${moedaAtivo && moedaAtivo !== 'BRL' ? ` (FX ${moedaAtivo}/BRL: ${formatNumero(fxRate, 4)})` : ''}`}
                     </p>
                 )}
                 {bloqueadoSemAporte && (

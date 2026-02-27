@@ -225,6 +225,7 @@ export interface SimFundDashboard {
         VL_PL_ULTIMO: number;
         VL_PNL_ULTIMO: number;
         VL_COTA_ULTIMA: number;
+        VL_CAIXA_REAL: number;
     };
     pnl_fechamento: {
         items: SimFundPnlFechamento[];
@@ -265,6 +266,9 @@ export interface SimPosition {
     QTD_LIQ: number;
     PRECO_MEDIO: number | null;
     PRECO_ATUAL: number | null;
+    PRECO_ONLINE: boolean;
+    SEM_PRECO_MERCADO: boolean;
+    ALERTAS: string[] | null;
     CUSTO_TOTAL: number | null;
     VALOR_MERCADO: number | null;
     PNL_REALIZADO: number | null;
@@ -799,4 +803,16 @@ export async function getSimFundRetorno(
         `/api/sim/fundos/retorno?${params}`,
     );
     return res.data.data.items;
+}
+
+export interface SimFxRateResult {
+    moeda: string;
+    dt: string | null;
+    fx_rate: number;
+}
+
+export async function getSimFxRate(moeda: string, dt: string): Promise<SimFxRateResult> {
+    const params = new URLSearchParams({ moeda, dt });
+    const res = await apiClient.get<APIResponse<SimFxRateResult>>(`/api/sim/fx-rate?${params}`);
+    return res.data.data;
 }
