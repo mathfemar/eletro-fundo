@@ -10,7 +10,7 @@ Rascunho: estruturar o projeto do zero com backend em FastAPI, frontend em React
    - `DIM_ATIVO_MAPPING`: vínculo do `id_ativo` com ticker Yahoo.
    - tabelas de domínio para `fundo`, `cotista`, relacionamento fundo-cotista, operações de caixa, trades, proventos e posições.
    - tabelas derivadas para séries de NAV/cota, histórico `adj_close`, snapshots intraday e retorno histórico de ativos.
-   Como [main_db](main_db) não pôde ser inspecionado por schema textual, o plano assume migração conceitual, não cópia cega da estrutura antiga.
+   Como [main.db](main.db) não pôde ser inspecionado por schema textual, o plano assume migração conceitual, não cópia cega da estrutura antiga.
 
 3. Modelar o motor de cálculo do fundo em backend como replay transacional:
    - início do fundo em data-base com caixa inicial de um ou mais cotistas;
@@ -97,4 +97,4 @@ Rascunho: estruturar o projeto do zero com backend em FastAPI, frontend em React
 - Reprocessamento completo para qualquer evento retroativo.
 
 **Ponto crítico já identificado**
-- O schema interno de [main_db](main_db) não ficou legível nas ferramentas disponíveis. O plano acima continua válido porque você decidiu redesenhar o banco, mas a execução deverá começar com uma inspeção real do SQLite para extrair o significado exato das colunas úteis de `DIM_ATIVO` e `DIM_ATIVO_MAPPING` antes da migração/importação.
+- O schema interno de [main.db](main.db) não ficou legível nas ferramentas disponíveis. O plano acima continua válido porque você decidiu redesenhar o banco, mas a execução deverá começar com uma inspeção real do SQLite para extrair o significado exato das colunas úteis de `DIM_ATIVO` e `DIM_ATIVO_MAPPING` antes da migração/importação.

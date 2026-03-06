@@ -11,3 +11,8 @@ frontend/node_modules/
 frontend/dist/
 frontend/coverage/
 *.log
+main_db
+main.db-shm
+main.db-wal
+main_db-shm
+main_db-wal

@@ -6,7 +6,7 @@ Projeto com backend em FastAPI, frontend em React + Vite + TypeScript e banco SQ
 
 - [backend](backend): API, cálculo de cotas, integração com `yfinance` e agendamentos.
 - [frontend](frontend): interface React para ativos, preços e simulação do fundo.
-- [main_db](main_db): banco SQLite principal, preservando `DIM_ATIVO` e `DIM_ATIVO_MAPPING`.
+- [main.db](main.db): banco SQLite principal, preservando `DIM_ATIVO` e `DIM_ATIVO_MAPPING`.
 - [YFinanceConfig.py](YFinanceConfig.py): configuração de proxy/SSL para `yfinance`.
 
 ## Regras principais
