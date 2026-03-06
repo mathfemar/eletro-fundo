@@ -1,0 +1,6 @@
+export { AssetHistoryPage } from './AssetHistoryPage'
+export { AssetRegistryPage } from './AssetRegistryPage'
+export { DashboardPage } from './DashboardPage'
+export { FundOperationsPage } from './FundOperationsPage'
+export { FundRegistryPage } from './FundRegistryPage'
+export { LivePricesPage } from './LivePricesPage'
